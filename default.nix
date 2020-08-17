@@ -1,14 +1,14 @@
-with import <nixpkgs> { };
 let
-  mkLibEdgeTpu = { pname, sha256 }: stdenv.mkDerivation {
+  pkgs = import <nixpkgs> { };
+  mkLibEdgeTpu = { pname, sha256 }: pkgs.stdenv.mkDerivation {
     inherit pname;
     version = "14.1";
-    src = fetchurl {
+    src = pkgs.fetchurl {
       url = "https://packages.cloud.google.com/apt/pool/${pname}_14.1_arm64_${sha256}.deb";
       inherit sha256;
     };
-    nativeBuildInputs = [ dpkg autoPatchelfHook ];
-    buildInputs = [ libusb stdenv.cc.cc.lib ];
+    nativeBuildInputs = [ pkgs.dpkg pkgs.autoPatchelfHook ];
+    buildInputs = [ pkgs.libusb pkgs.stdenv.cc.cc.lib ];
     unpackCmd = ''
       mkdir ./src
       dpkg -x $src ./src
@@ -43,16 +43,16 @@ let
     sha256 = "4669a44bd6d6f3b7d33c356182ceaeb29e1c981843629adeb77ac1283dbd498e";
   };
 
-  libedgetpu-dev = stdenv.mkDerivation rec {
+  libedgetpu-dev = pkgs.stdenv.mkDerivation rec {
     pname = "libedgetpu-dev";
     version = "14.1";
 
-    src = fetchurl {
+    src = pkgs.fetchurl {
       url = "https://packages.cloud.google.com/apt/pool/libedgetpu-dev_14.1_arm64_498e64beaac88b3de363dbf26fd20d98aa02db58d3e377945c7ed4127b8f139d.deb";
       sha256 = "498e64beaac88b3de363dbf26fd20d98aa02db58d3e377945c7ed4127b8f139d";
     };
 
-    nativeBuildInputs = [ dpkg autoPatchelfHook ];
+    nativeBuildInputs = [ pkgs.dpkg ];
     buildInputs = [ libedgetpu1-max ];
     unpackCmd = ''
       mkdir ./src
@@ -70,50 +70,40 @@ let
     '';
   };
 
-  custom-eigen = fetchurl {
-    url = "https://bitbucket.org/eigen/eigen/get/049af2f56331.tar.gz";
-    sha256 = "0s7bskv4qip53khajp0lpc0sawaf1lwl004lrc13dbzcfg3rmmpk";
-  };
+  eigen = pkgs.eigen.overrideAttrs (attrs: {
+    version = "3.3.90";
+    src = pkgs.fetchFromGitLab {
+      owner = "libeigen";
+      repo = "eigen";
+      rev = "3cd148f98338f8c03ce2757c528423338990a90d";
+      sha256 = "0h4xzrkm3f3a692izw6v8r5sdm0yi4x3p4wqxvyp2sd0pnpcjz5f";
+    };
+  });
 
-  custom-gemmlowp = fetchurl {
+  gemmlowp-src = pkgs.fetchurl {
     url = "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/gemmlowp/archive/12fed0cd7cfcd9e169bf1925bc3a7a58725fdcc3.zip";
     sha256 = "0d3q9xnky50x8x8piwdrdg451a8mp3iw92lx4b9x1wi9v62b8y36";
   };
 
-  custom-googletest = fetchurl {
-    url = "https://github.com/google/googletest/archive/release-1.8.0.tar.gz";
-    sha256 = "1n5p1m2m3fjrjdj752lf92f9wq3pl5cbsfrb49jqbg52ghkz99jq";
-  };
-
-  custom-absl = fetchurl {
-    url = "https://github.com/abseil/abseil-cpp/archive/43ef2148c0936ebf7cb4be6b19927a9d9d145b8f.tar.gz";
-    sha256 = "0w6h4qsmg0w01f61s40ni644cykwrbmkpcq8pm743i7dm9mkzndc";
-  };
-
-  custom-neon-2-sse = fetchurl {
+  neon-2-sse-src = pkgs.fetchurl {
     url = "https://github.com/intel/ARM_NEON_2_x86_SSE/archive/master.zip";
     sha256 = "1l2cmqx7fl7hf78aig2sr285y0xahg512arcyhamgmvszr1kpssm";
   };
 
-  custom-farmhash = fetchurl {
+  farmhash-src = pkgs.fetchurl {
     url = "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/farmhash/archive/816a4ae622e964763ca0862d9dbd19324a1eaf45.tar.gz";
     sha256 = "185b2xdxl4d4cnsnv6abg8s22gxvx8673jq2yaq85bz4cdy58q35";
   };
 
-  custom-flatbuffers = fetchurl {
-    url = "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/flatbuffers/archive/v1.11.0.tar.gz";
-    sha256 = "02x54gyk76fjryg2yl0r9yb278bypmpnaa3jnyqlakq989k2hjiz";
-  };
-
-  custom-fft2d = fetchurl {
+  fft2d-src = pkgs.fetchurl {
     url = "https://storage.googleapis.com/mirror.tensorflow.org/www.kurims.kyoto-u.ac.jp/~ooura/fft2d.tgz";
     sha256 = "1jfflzi74fag9z4qmgwvp90aif4dpbr1657izmxlgvf4hy8fk9xd";
   };
 
-  libtensorflow-lite = stdenv.mkDerivation rec {
+  tensorflow-lite = pkgs.stdenv.mkDerivation rec {
     pname = "libtensorflow-lite";
     version = "v2.0.0";
-    src = fetchFromGitHub {
+    src = pkgs.fetchFromGitHub {
       owner = "tensorflow";
       repo = "tensorflow";
       rev = version;
@@ -123,48 +113,57 @@ let
     dontConfigure = true;
     buildPhase = ''
       substituteInPlace ./tensorflow/lite/tools/make/Makefile \
-        --replace /bin/bash ${runtimeShell} \
-        --replace /bin/sh ${runtimeShell}
+        --replace /bin/bash ${pkgs.bash}/bin/bash \
+        --replace /bin/sh ${pkgs.bash}/bin/sh
 
-      mkdir -p ./tensorflow/lite/tools/make/downloads/{eigen,gemmlowp,googletest,absl,neon_2_sse,farmhash,flatbuffers,fft2d}
+      pushd ./tensorflow/lite/tools/make
+      mkdir -p ./downloads/{gemmlowp,neon_2_sse,farmhash,fft2d,flatbuffers}
+      pushd ./downloads
 
-      pushd ./tensorflow/lite/tools/make/downloads
-      tar -xzf ${custom-eigen} -C ./eigen --strip-components=1
-
-      unzip ${custom-gemmlowp} -d .
+      unzip ${gemmlowp-src} -d .
       mv ./gemmlowp-*/* ./gemmlowp
       rm -rf ./gemmlowp-*
 
-      tar -xzf ${custom-googletest} -C ./googletest --strip-components=1
-      tar -xzf ${custom-absl} -C ./absl --strip-components=1
-
-      unzip ${custom-neon-2-sse} -d .
+      unzip ${neon-2-sse-src} -d .
       mv ./ARM_NEON_2_x86_SSE-master/* ./neon_2_sse
       rm -rf ./ARM_NEON_2_x86_SSE-master
 
-      tar -xzf ${custom-farmhash} -C ./farmhash --strip-components=1
-      tar -xzf ${custom-flatbuffers} -C ./flatbuffers --strip-components=1
-      tar -xzf ${custom-fft2d} -C ./fft2d --strip-components=1
+      tar -xzf ${farmhash-src} -C ./farmhash --strip-components=1
 
+      # tflite is using the source of flatbuffers :(
+      cp -r ${pkgs.flatbuffers.src}/* ./flatbuffers
+
+      tar -xzf ${fft2d-src} -C ./fft2d --strip-components=1
+      popd
       popd
 
-      set -x
-
-      make -j $(nproc) \
-        -C . \
-        -f ./tensorflow/lite/tools/make/Makefile \
-        TARGET=aarch64 \
+      makedir=./tensorflow/lite/tools/make
+      includes="-I$makedir -I.  \
+        -I./tensorflow/lite/tools/make/downloads \
+        -I./tensorflow/lite/tools/make/downloads/gemmlowp \
+        -I./tensorflow/lite/tools/make/downloads/neon_2_sse \
+        -I./tensorflow/lite/tools/make/downloads/farmhash/src \
+        -I${eigen}/include/eigen3"
+      make \
+        -j $(nproc) \
+        INCLUDES="$includes" \
         TARGET_TOOLCHAIN_PREFIX="" \
-        lib
+        -f ./tensorflow/lite/tools/make/Makefile \
+        all
     '';
     installPhase = ''
-      mkdir -p "$out/lib" "$out/include"
-      cp ./tensorflow/lite/tools/make/gen/aarch64_armv8-a/lib/libtensorflow-lite.a "$out/lib"
+      # make library dir
+      mkdir -p "$out/lib" "$out/bin"
+
+      # copy the static lib into the output dir
+      install ./tensorflow/lite/tools/make/gen/linux_aarch64/lib/*.a "$out/lib"
+
+      # copy binaries into the output dir
+      install ./tensorflow/lite/tools/make/gen/linux_aarch64/bin/* "$out/bin"
+
+      # copy headers into the output dir
       find ./tensorflow/lite -name '*.h'| while read f; do
-        dir=$(dirname "$f")
-        include_dir="$out/include/$dir"
-        mkdir -p "$include_dir"
-        cp "$f" "$include_dir"
+        install -D "$f" "$out/include/''${f/.\//}"
       done
     '';
     postPatch = ''
@@ -172,33 +171,36 @@ let
     '';
 
     buildInputs = [
-      gnumake
-      unzip
-      which
+      pkgs.gnumake
+      pkgs.unzip
+      pkgs.zlib
+      pkgs.abseil-cpp
+      pkgs.flatbuffers
     ];
   };
 
-  app = stdenv.mkDerivation {
-    pname = "tflite-test";
+  tflite-app = pkgs.stdenv.mkDerivation {
+    pname = "tflite-app";
     version = "0.1.0";
-    nativeBuildInputs = [ autoPatchelfHook ];
+    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
     buildInputs = [
-      abseil-cpp
       libedgetpu1-max
       libedgetpu-dev
-      flatbuffers
-      libtensorflow-lite
+      tensorflow-lite
+      pkgs.flatbuffers
     ];
     dontConfigure = true;
     buildPhase = ''
       g++ \
         -o tflite_app main.cpp \
         -ledgetpu \
-        -ltensorflow-lite
+        -ltensorflow-lite \
+        -lrt \
+        -ldl
     '';
     installPhase = ''
       mkdir -p "$out/bin"
-      cp tflite_app "$out/bin"
+      install tflite_app $out/bin
     '';
     src = ./app;
   };
@@ -209,7 +211,6 @@ in
     libedgetpu1-max
     libedgetpu1-std
     libedgetpu-dev
-    libtensorflow-lite
-    # app
-    ;
+    tensorflow-lite
+    tflite-app;
 }
