@@ -1,6 +1,6 @@
 with import <nixpkgs> { };
 let
-  mkLibPkg = pname: sha256: stdenv.mkDerivation {
+  mkLibEdgeTpu = { pname, sha256 }: stdenv.mkDerivation {
     inherit pname;
     version = "14.1";
     src = fetchurl {
@@ -31,13 +31,17 @@ let
       mkdir -p "$out/share"
       cp -r ./usr/share/doc "$out/share"
     '';
-    meta = {
-      platforms = lib.platforms.aarch64;
-    };
   };
 
-  libedgetpu1-max = mkLibPkg "libedgetpu1-max" "795e7f49c81b1f9586f43b1978dd938b192df3e5e4939e1e8deb965d64ca41e6";
-  libedgetpu1-std = mkLibPkg "libedgetpu1-std" "4669a44bd6d6f3b7d33c356182ceaeb29e1c981843629adeb77ac1283dbd498e";
+  libedgetpu1-max = mkLibEdgeTpu {
+    pname = "libedgetpu1-max";
+    sha256 = "795e7f49c81b1f9586f43b1978dd938b192df3e5e4939e1e8deb965d64ca41e6";
+  };
+
+  libedgetpu1-std = mkLibEdgeTpu {
+    pname = "libedgetpu1-std";
+    sha256 = "4669a44bd6d6f3b7d33c356182ceaeb29e1c981843629adeb77ac1283dbd498e";
+  };
 
   libedgetpu-dev = stdenv.mkDerivation rec {
     pname = "libedgetpu-dev";
@@ -64,54 +68,6 @@ let
       mkdir -p "$out/share"
       cp -r ./usr/share/doc "$out/share"
     '';
-    meta = {
-      platforms = lib.platforms.aarch64;
-    };
-  };
-
-  ruy = buildBazelPackage rec {
-    name = "ruy-${version}";
-    version = "0.0.1";
-    buildInputs = [
-      gtest
-    ];
-    bazelTarget = "//ruy:ruy";
-    src = fetchFromGitHub {
-      owner = "google";
-      repo = "ruy";
-      rev = "5bb02fbf90824c2eb6cd7418f766c593106a332b";
-      sha256 = "0ljir9p5db2g056lisqwfrcx1ml7kgk4yyxrad9x4ciniqwf928i";
-    };
-    fetchAttrs = {
-      preInstall = ''
-        # Remove the go_sdk (it's just a copy of the go derivation) and all
-        # references to it from the marker files. Bazel does not need to download
-        # this sdk because we have patched the WORKSPACE file to point to the one
-        # currently present in PATH. Without removing the go_sdk from the marker
-        # file, the hash of it will change anytime the Go derivation changes and
-        # that would lead to impurities in the marker files which would result in
-        # a different sha256 for the fetch phase.
-        rm -rf $bazelOut/external/{go_sdk,\@go_sdk.marker}
-
-        # Remove the gazelle tools, they contain go binaries that are built
-        # non-deterministically. As long as the gazelle version matches the tools
-        # should be equivalent.
-        rm -rf $bazelOut/external/{bazel_gazelle_go_repository_tools,\@bazel_gazelle_go_repository_tools.marker}
-
-        # Remove the gazelle repository cache
-        chmod -R +w $bazelOut/external/bazel_gazelle_go_repository_cache
-        rm -rf $bazelOut/external/{bazel_gazelle_go_repository_cache,\@bazel_gazelle_go_repository_cache.marker}
-
-        # Remove log file(s)
-        rm  -f "$bazelOut"/java.log "$bazelOut"/java.log.*
-      '';
-      sha256 = "03g36hgscm1rnlnd2na8ydpl8fksi2g5lxp9yw381hhn7kr5zmzy";
-    };
-    buildAttrs = {
-      installPhase = ''
-        ${tree}/bin/tree $PWD/bazel-ruy
-      '';
-    };
   };
 
   custom-eigen = fetchurl {
@@ -166,8 +122,6 @@ let
 
     dontConfigure = true;
     buildPhase = ''
-      set -e
-
       substituteInPlace ./tensorflow/lite/tools/make/Makefile \
         --replace /bin/bash ${runtimeShell} \
         --replace /bin/sh ${runtimeShell}
@@ -195,8 +149,14 @@ let
       popd
 
       set -x
-      NIX_DEBUG=7 ./tensorflow/lite/tools/make/build_aarch64_lib.sh TARGET_TOOLCHAIN_PREFIX="" \
-        CXX=$(which g++) CC=$(which gcc) lib
+
+      export NIX_DEBUG=7
+      make -j $(nproc) \
+        -C . \
+        -f ./tensorflow/lite/tools/make/Makefile \
+        TARGET=aarch64 \
+        TARGET_TOOLCHAIN_PREFIX="" \
+        lib
     '';
     installPhase = ''
       mkdir -p "$out/lib" "$out/include"
@@ -208,7 +168,6 @@ let
         cp "$f" "$include_dir"
       done
     '';
-    patches = [ ./toolchain.patch ];
     postPatch = ''
       patchShebangs ./tensorflow/lite/tools/make
     '';
@@ -247,5 +206,11 @@ let
 
 in
 {
-  inherit libedgetpu1-max libedgetpu1-std libedgetpu-dev libtensorflow-lite app;
+  inherit
+    libedgetpu1-max
+    libedgetpu1-std
+    libedgetpu-dev
+    libtensorflow-lite
+    # app
+    ;
 }
