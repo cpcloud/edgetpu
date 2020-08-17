@@ -150,7 +150,6 @@ let
 
       set -x
 
-      export NIX_DEBUG=7
       make -j $(nproc) \
         -C . \
         -f ./tensorflow/lite/tools/make/Makefile \
