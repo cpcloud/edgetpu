@@ -192,7 +192,7 @@ let
     dontConfigure = true;
     buildPhase = ''
       g++ \
-        -o tflite_app main.cpp \
+        -o tflite-app main.cpp \
         -ledgetpu \
         -ltensorflow-lite \
         -lrt \
@@ -200,7 +200,7 @@ let
     '';
     installPhase = ''
       mkdir -p "$out/bin"
-      install tflite_app $out/bin
+      install tflite-app $out/bin
     '';
     src = ./app;
   };
