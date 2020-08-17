@@ -16,7 +16,6 @@ let
     installPhase = ''
       # udev rules
       mkdir -p "$out/etc"
-
       cp -r ./lib/udev "$out/etc"
 
       # libs
