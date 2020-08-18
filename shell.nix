@@ -20,6 +20,7 @@ pkgs.mkShell {
     pkgs.v4l-utils
     rust.nightly
     pkgs.cargo-edit
+    pkgs.flatbuffers
   ];
 
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
