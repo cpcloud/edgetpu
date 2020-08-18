@@ -14,6 +14,7 @@
 , fetchzip
 }:
 let
+  archs = { };
   mkLibEdgeTpu = { pname, sha256 }: stdenv.mkDerivation {
     inherit pname;
     version = "14.1";
