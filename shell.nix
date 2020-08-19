@@ -1,17 +1,16 @@
 let
   pkgs = import <nixpkgs> { };
-  edgetpu = pkgs.callPackage ./edgetpu.nix { };
   rust = import ./rust.nix;
+  edgetpu = import ./default.nix;
 in
 pkgs.mkShell {
   name = "edgetpu";
   nativeBuildInputs = [ pkgs.pkgconfig ];
   buildInputs = [
-    edgetpu.libedgetpu1-max
-    edgetpu.libedgetpu1-std
-    edgetpu.libedgetpu-dev
     edgetpu.tensorflow-lite
-
+    edgetpu.libedgetpu1-max
+    edgetpu.libedgetpu-dev
+    pkgs.libusb
     pkgs.clang_10
     pkgs.openssl
     pkgs.sqlite
@@ -19,7 +18,6 @@ pkgs.mkShell {
     pkgs.libv4l
     pkgs.v4l-utils
     rust.nightly
-    pkgs.cargo-edit
     pkgs.flatbuffers
   ];
 

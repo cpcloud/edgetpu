@@ -5,6 +5,7 @@
 , tensorflow-lite
 , flatbuffers
 , libusb
+, boost
 }:
 stdenv.mkDerivation {
   pname = "tflite-app";
@@ -16,6 +17,7 @@ stdenv.mkDerivation {
     tensorflow-lite
     flatbuffers
     libusb
+    boost
   ];
   dontConfigure = true;
   buildPhase = ''
@@ -26,7 +28,8 @@ stdenv.mkDerivation {
       -ltensorflow-lite \
       -lusb-1.0 \
       -lrt \
-      -ldl
+      -lpthread \
+      -ldl -lboost_program_options
   '';
   installPhase = ''
     mkdir -p "$out/bin"
