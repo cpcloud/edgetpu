@@ -1,10 +1,12 @@
 { stdenv
 , bash
+, lib
 , gnumake
 , coreutils
 , zlib
 , flatbuffers
 , eigen
+, hostPlatform
 , fetchFromGitLab
 , fetchFromGitHub
 , fetchzip
@@ -56,6 +58,14 @@ stdenv.mkDerivation rec {
 
   dontConfigure = true;
 
+  copy-neon-2-sse = lib.optionalString stdenv.isAarch64 ''
+    cp -r ${neon-2-sse-src} ./neon_2_sse
+  '';
+
+  include-neon-2-sse = lib.optionalString stdenv.isAarch64 ''
+    -I $PWD/tensorflow/lite/tools/make/downloads/neon_2_sse
+  '';
+
   buildPhase = ''
     substituteInPlace ./tensorflow/lite/tools/make/Makefile \
       --replace /bin/bash ${bash}/bin/bash \
@@ -68,7 +78,7 @@ stdenv.mkDerivation rec {
     pushd ./downloads
 
     cp -r ${gemmlowp-src} ./gemmlowp
-    cp -r ${neon-2-sse-src} ./neon_2_sse
+    ${copy-neon-2-sse}
     cp -r ${farmhash-src} ./farmhash
     cp -r ${fft2d-src} ./fft2d
 
@@ -79,9 +89,8 @@ stdenv.mkDerivation rec {
 
     popd
 
-    includes="-I $PWD \
+    includes="${include-neon-2-sse} -I $PWD \
       -I $PWD/tensorflow/lite/tools/make/downloads/gemmlowp \
-      -I $PWD/tensorflow/lite/tools/make/downloads/neon_2_sse \
       -I $PWD/tensorflow/lite/tools/make/downloads/farmhash/src \
       -I ${tflite-eigen}/include/eigen3"
 
@@ -96,7 +105,7 @@ stdenv.mkDerivation rec {
     mkdir "$out"
 
     # copy the static lib and binaries into the output dir
-    cp -r ./tensorflow/lite/tools/make/gen/linux_${arch}/{bin,lib} "$out"
+    cp -r ./tensorflow/lite/tools/make/gen/linux_${hostPlatform.uname.processor}/{bin,lib} "$out"
 
     # copy headers into the output dir
     find ./tensorflow/lite -name '*.h'| while read f; do
