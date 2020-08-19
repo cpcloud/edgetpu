@@ -1,4 +1,11 @@
-{ stdenv, autoPatchelfHook }:
+{ stdenv
+, autoPatchelfHook
+, libedgetpu1-max
+, libedgetpu-dev
+, tensorflow-lite
+, flatbuffers
+, libusb
+}:
 stdenv.mkDerivation {
   pname = "tflite-app";
   version = "0.1.0";
@@ -13,9 +20,11 @@ stdenv.mkDerivation {
   dontConfigure = true;
   buildPhase = ''
     g++ \
-      -o tflite-app main.cpp \
+      -o tflite-app \
+      main.cpp \
       -ledgetpu \
       -ltensorflow-lite \
+      -lusb-1.0 \
       -lrt \
       -ldl
   '';
