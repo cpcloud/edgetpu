@@ -4,6 +4,7 @@
 , autoPatchelfHook
 , libcxx
 , libcxxabi
+, lib
 }:
 let
   pname = "edgetpu-compiler";
@@ -32,4 +33,8 @@ stdenv.mkDerivation {
     mkdir -p "$out/share"
     cp -r ./usr/share "$out"
   '';
+
+  meta = {
+    platforms = [ "x86_64-linux" ];
+  };
 }

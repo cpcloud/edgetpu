@@ -3,6 +3,7 @@
 , dpkg
 , autoPatchelfHook
 , libusb
+, lib
 , kind
 , arch
 }:
@@ -51,4 +52,8 @@ stdenv.mkDerivation {
     mkdir -p "$out/share"
     cp -r ./usr/share/doc "$out/share"
   '';
+
+  meta = {
+    platforms = lib.attrNames sha256s;
+  };
 }

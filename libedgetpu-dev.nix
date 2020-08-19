@@ -1,4 +1,4 @@
-{ stdenv, fetchurl, dpkg, arch }:
+{ stdenv, fetchurl, dpkg, arch, lib }:
 let
   sha256s = {
     x86_64-linux = "2eb1100e364a203ce6b55f294676534c4c79aa4c9337f8e50e1ddaa07edd2ada";
@@ -28,4 +28,8 @@ stdenv.mkDerivation rec {
     mkdir -p "$out"
     cp -r ./usr/{include,share} "$out"
   '';
+
+  meta = {
+    platforms = lib.attrNames sha256s;
+  };
 }

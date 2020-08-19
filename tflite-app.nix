@@ -29,7 +29,8 @@ stdenv.mkDerivation {
       -lusb-1.0 \
       -lrt \
       -lpthread \
-      -ldl -lboost_program_options
+      -ldl \
+      -lboost_program_options
   '';
   installPhase = ''
     mkdir -p "$out/bin"

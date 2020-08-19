@@ -9,7 +9,8 @@ edition = "2018"
 [dependencies]
 structopt = "*"
 anyhow = "*"
+cxx = "*"
 
 [build-dependencies]
-bindgen = "*"
 anyhow = "*"
+cxx-build = "*"

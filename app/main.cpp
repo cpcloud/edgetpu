@@ -95,7 +95,6 @@ int main(int argc, const char *argv[]) {
         BuildEdgeTpuInterpreter(*model, edgetpu_context.get());
     return 0;
   } else {
-    std::cout << "path argument required" << std::endl;
     return 1;
   }
 }

@@ -1,8 +1,21 @@
-mod tflite_sys;
-
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use structopt::StructOpt;
-use tflite_sys::*;
+
+use std::os::unix::ffi::OsStrExt;
+
+#[cxx::bridge(namespace = pose)]
+mod ffi {
+    extern "C" {
+        include!("wrapper.h");
+
+        type FlatBufferModel;
+        type Interpreter;
+
+        fn build_model_from_file(model_path: &str) -> UniquePtr<FlatBufferModel>;
+        fn build_interpreter(model: &mut FlatBufferModel) -> UniquePtr<Interpreter>;
+        fn allocate_tensors(interpreter: &mut Interpreter);
+    }
+}
 
 #[derive(structopt::StructOpt)]
 struct Args {
@@ -12,11 +25,15 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::from_args();
-    let cstring =
-        std::ffi::CString::new(args.model_path.to_string_lossy().to_string().into_bytes())?;
-    unsafe {
-        let reporter = tflite_DefaultErrorReporter();
-        tflite_FlatBufferModel::BuildFromFile(cstring.as_ptr(), reporter)
-    };
+    let path = args.model_path.to_string_lossy().to_string();
+    let mut model = ffi::build_model_from_file(&path);
+    if model.is_null() {
+        return Err(anyhow!(
+            "unable to load model {}",
+            args.model_path.display()
+        ));
+    }
+    let mut interp = ffi::build_interpreter(&mut model);
+    ffi::allocate_tensors(&mut interp);
     Ok(())
 }
