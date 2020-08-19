@@ -58,13 +58,13 @@ stdenv.mkDerivation rec {
 
   dontConfigure = true;
 
-  copy-neon-2-sse = lib.optionalString stdenv.isAarch64 ''
-    cp -r ${neon-2-sse-src} ./neon_2_sse
-  '';
+  copy-neon-2-sse = lib.optionalString
+    stdenv.isAarch64
+    "cp -r ${neon-2-sse-src} ./neon_2_sse";
 
-  include-neon-2-sse = lib.optionalString stdenv.isAarch64 ''
-    -I $PWD/tensorflow/lite/tools/make/downloads/neon_2_sse
-  '';
+  include-neon-2-sse = lib.optionalString
+    stdenv.isAarch64
+    "-I $PWD/tensorflow/lite/tools/make/downloads/neon_2_sse";
 
   buildPhase = ''
     substituteInPlace ./tensorflow/lite/tools/make/Makefile \
