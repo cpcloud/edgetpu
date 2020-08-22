@@ -15,7 +15,15 @@ pkgs.mkShell {
     pkgs.v4l-utils
     rust.nightly
     pkgs.flatbuffers
-    (pkgs.python3.withPackages (p: with p; [ ipython numpy pillow edgetpu-max ]))
+    (pkgs.python3.withPackages (
+      p: with p; [
+        ipython
+        numpy
+        pillow
+        edgetpu-max
+        coloredlogs
+      ]
+    ))
   ];
 
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
