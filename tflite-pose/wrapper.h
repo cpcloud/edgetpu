@@ -16,15 +16,17 @@ using tflite::FlatBufferModel;
 using tflite::Interpreter;
 
 auto build_model_from_file(rust::Str model_path) {
-  std::string path(model_path.data(), model_path.size());
+  const std::string path(model_path.data(), model_path.size());
   return FlatBufferModel::BuildFromFile(path.data());
 }
 
-auto allocate_tensors(Interpreter &interpreter) {
-  interpreter.AllocateTensors();
+rust::String input_name(const Interpreter &interp, size_t index) {
+  return interp.tensor(index)->name;
 }
 
-auto build_interpreter(FlatBufferModel &model) {
+auto num_inputs(const Interpreter &interp) { return interp.inputs().size(); }
+
+std::unique_ptr<Interpreter> build_interpreter(const FlatBufferModel &model) {
   auto edgetpu_context = edgetpu::EdgeTpuManager::GetSingleton()->OpenDevice();
   tflite::ops::builtin::BuiltinOpResolver resolver;
   resolver.AddCustom(edgetpu::kCustomOp, edgetpu::RegisterCustomOp());
