@@ -36,6 +36,20 @@ pkgs.mkShell {
     pkgs.libusb
     pkgs.clang_10
     pkgs.libv4l
+    pkgs.gtk3
+    pkgs.gobject-introspection
+    (
+      (pkgs.gst_all_1.gst-plugins-bad.override {
+        opencv4 = null;
+        directfb = null;
+      }).overrideAttrs (attrs: {
+        mesonFlags = attrs.mesonFlags ++ [ "-Dopencv=disabled" "-Ddirectfb=disabled" ];
+      })
+    )
+    pkgs.gst_all_1.gst-plugins-base
+    pkgs.gst_all_1.gst-plugins-good
+    pkgs.gst_all_1.gst-plugins-ugly
+    pkgs.gst_all_1.gstreamer
     (
       pkgs.v4l-utils.override {
         withGUI = false;
@@ -49,11 +63,13 @@ pkgs.mkShell {
     })
     (pkgs.python3.withPackages (
       p: with p; [
-        ipython
-        numpy
-        pillow
-        edgetpu-max
-        coloredlogs
+        p.ipython
+        p.numpy
+        p.pillow
+        p.edgetpu-max
+        p.coloredlogs
+        p.svgwrite
+        p.gst-python
       ]
     ))
   ];
