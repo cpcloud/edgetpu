@@ -10,11 +10,16 @@
 , xtensor
 , xtensor-io
 , opencv4
+, pkgconfig
 }:
 stdenv.mkDerivation {
   pname = "tflite-app";
   version = "0.1.0";
-  nativeBuildInputs = [ autoPatchelfHook stdenv.cc.cc.lib ];
+  nativeBuildInputs = [
+    pkgconfig
+    autoPatchelfHook
+    stdenv.cc.cc.lib
+  ];
   buildInputs = [
     libedgetpu.max
     libedgetpu.dev
@@ -33,21 +38,18 @@ stdenv.mkDerivation {
   dontConfigure = true;
   buildPhase = ''
     $CXX \
-      -I ${opencv4}/include/opencv4 \
       -o tflite-app \
       -O3 \
       -flto \
-      main.cpp \
       -std=c++2a \
+      main.cpp \
+      $(pkg-config --cflags opencv4) \
+      $(pkg-config --libs opencv4) \
       -lboost_program_options \
       -ledgetpu \
       -ledgetpu_basic_engine \
       -ledgetpu_basic_engine_native \
       -ltensorflow-lite \
-      -lopencv_videoio \
-      -lopencv_highgui \
-      -lopencv_core \
-      -lopencv_imgproc \
       -lrt \
       -lpthread \
       -ldl
