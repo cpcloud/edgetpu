@@ -2,7 +2,7 @@ let
   moz_overlay = import (
     builtins.fetchTarball https://github.com/mozilla/nixpkgs-mozilla/archive/master.tar.gz
   );
-  pkgs = import (builtins.fetchTarball https://github.com/cpcloud/nixpkgs/archive/edgetpu.tar.gz) {
+  pkgs = import (builtins.fetchTarball https://github.com/cpcloud/nixpkgs/archive/2ee5cb241bb446c6282e285c415695cbe82f8508.tar.gz) {
     overlays = [
       moz_overlay
       (self: super: {
