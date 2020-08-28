@@ -33,3 +33,4 @@
 result
 target/
 Cargo.lock
+.ccls-cache

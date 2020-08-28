@@ -9,6 +9,7 @@
 , enableDebugging
 , xtensor
 , xtensor-io
+, opencv4
 }:
 stdenv.mkDerivation {
   pname = "tflite-app";
@@ -27,22 +28,26 @@ stdenv.mkDerivation {
     flatbuffers
     boost
     xtensor
-    xtensor-io
+    opencv4
   ];
   dontConfigure = true;
   buildPhase = ''
     $CXX \
+      -I ${opencv4}/include/opencv4 \
       -o tflite-app \
       -O3 \
       -flto \
       main.cpp \
-      -std=c++17 \
+      -std=c++2a \
       -lboost_program_options \
       -ledgetpu \
       -ledgetpu_basic_engine \
       -ledgetpu_basic_engine_native \
       -ltensorflow-lite \
-      -lOpenImageIO \
+      -lopencv_videoio \
+      -lopencv_highgui \
+      -lopencv_core \
+      -lopencv_imgproc \
       -lrt \
       -lpthread \
       -ldl

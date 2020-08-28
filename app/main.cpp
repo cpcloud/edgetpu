@@ -7,73 +7,92 @@
 #include "src/cpp/basic/basic_engine.h"
 #include "src/cpp/posenet/posenet_decoder_op.h"
 
-#include "xtensor-io/ximage.hpp"
 #include "xtensor/xadapt.hpp"
 #include "xtensor/xarray.hpp"
 #include "xtensor/xaxis_iterator.hpp"
+#include "xtensor/xaxis_slice_iterator.hpp"
 #include "xtensor/xpad.hpp"
 #include "xtensor/xview.hpp"
 
+#include <boost/format.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
 
-#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <string>
 #include <tuple>
-#include <unordered_map>
 #include <vector>
+
+#include "opencv2/core.hpp"
+#include "opencv2/highgui.hpp"
+#include "opencv2/imgproc.hpp"
+#include "opencv2/videoio.hpp"
 
 namespace po = boost::program_options;
 
 namespace pose {
 
-static constexpr std::array<const char *, 17> KEYPOINTS = {
-    "nose",        "left eye",      "right eye",      "left ear",
-    "right ear",   "left shoulder", "right shoulder", "left elbow",
-    "right elbow", "left wrist",    "right wrist",    "left hip",
-    "right hip",   "left knee",     "right knee",     "left ankle",
-    "right ankle"};
-static const size_t NUM_KEYPOINTS = KEYPOINTS.size();
-
 class Keypoint {
 public:
-  explicit Keypoint() {}
-  explicit Keypoint(std::string keypoint, std::array<size_t, 2> yx)
-      : keypoint_(keypoint), yx_(yx) {}
-  explicit Keypoint(std::string keypoint, std::array<size_t, 2> yx, float score)
-      : keypoint_(keypoint), yx_(yx), score_(score) {}
+  enum class Kind : uint8_t {
+    Nose,
+    LeftEye,
+    RightEye,
+    LeftEar,
+    RightEar,
+    LeftShoulder,
+    RightShoulder,
+    LeftElbow,
+    RightElbow,
+    LeftWrist,
+    RightWrist,
+    LeftHip,
+    RightHip,
+    LeftKnee,
+    RightKnee,
+    LeftAnkle,
+    RightAnkle
+  };
 
-  std::array<size_t, 2> &yx() { return yx_; }
-  std::array<size_t, 2> yx() const { return yx_; }
-  std::optional<float> score() const { return score_; }
+public:
+  explicit Keypoint() {}
+  explicit Keypoint(Kind keypoint, cv::Point2f point, float score)
+      : keypoint_(keypoint), point_(point), score_(score) {}
+
+  Kind kind() const { return keypoint_; }
+  cv::Point2f &point() { return point_; }
+  cv::Point2f point() const { return point_; }
+  float score() const { return score_; }
 
 private:
-  std::string keypoint_;
-  std::array<size_t, 2> yx_;
-  std::optional<float> score_;
+  Kind keypoint_;
+  cv::Point2f point_;
+  float score_;
 };
+
+static constexpr std::size_t NUM_KEYPOINTS =
+    static_cast<size_t>(Keypoint::Kind::RightAnkle) + 1;
+
+using Keypoints = std::array<Keypoint, NUM_KEYPOINTS>;
 
 class Pose {
 public:
-  explicit Pose(std::unordered_map<std::string, Keypoint> keypoints)
-      : keypoints_(keypoints), score_() {}
-  explicit Pose(std::unordered_map<std::string, Keypoint> keypoints,
-                float score)
+  explicit Pose(Keypoints keypoints, float score)
       : keypoints_(keypoints), score_(score) {}
 
-  std::unordered_map<std::string, Keypoint> keypoints() const {
-    return keypoints_;
-  }
-  std::optional<float> score() const { return score_; }
+  Keypoints keypoints() const { return keypoints_; }
+  float score() const { return score_; }
 
 private:
-  std::unordered_map<std::string, Keypoint> keypoints_;
-  std::optional<float> score_;
+  Keypoints keypoints_;
+  float score_;
 };
+
+using float_milliseconds =
+    std::chrono::duration<float, std::chrono::milliseconds::period>;
 
 class Engine {
 public:
@@ -82,7 +101,7 @@ public:
         input_tensor_shape_(engine_->get_input_tensor_shape()),
         output_offsets_(Engine::make_output_offsets(
             engine_->get_all_output_tensors_sizes())),
-        mirror_(mirror_) {
+        mirror_(mirror) {
     if (input_tensor_shape_.size() != 4) {
       throw std::exception();
     }
@@ -94,34 +113,20 @@ public:
     }
   }
 
-  int32_t height() const { return input_tensor_shape_[1]; }
+  size_t width() const { return input_tensor_shape_[2]; }
 
-  int32_t width() const { return input_tensor_shape_[2]; }
+  size_t depth() const { return input_tensor_shape_[3]; }
 
-  int32_t depth() const { return input_tensor_shape_[3]; }
-
-  template <typename T>
-  std::pair<std::vector<Pose>, std::chrono::milliseconds>
-  detect_poses(xt::xarray<T> img) {
-    const size_t zero = 0;
-    img = xt::pad(
-        img,
-        {{zero, std::max(zero, static_cast<size_t>(height()) - img.shape(0))},
-         {zero, std::max(zero, static_cast<size_t>(width()) - img.shape(1))},
-         {zero, zero}});
-
-    // XXX: auto cast into a vector<T>
-    std::vector<T> input;
-    input.reserve(img.size());
-    for (auto elem : xt::ravel(img)) {
-      input.push_back(elem);
-    }
+  std::pair<std::vector<Pose>, float_milliseconds>
+  detect_poses(const cv::Mat &raw_img) {
+    std::vector<uint8_t> input(raw_img.total() * 3);
+    std::copy(raw_img.data, raw_img.data + raw_img.total() * 3, input.begin());
     auto outputs = engine_->RunInference(input);
-    std::chrono::milliseconds inf_time(
-        static_cast<uint64_t>(engine_->get_inference_time()));
+
+    float_milliseconds inf_time(engine_->get_inference_time());
 
     std::vector<size_t> keypoints_shape = {
-        outputs[0].size() / (NUM_KEYPOINTS * 2), NUM_KEYPOINTS, 2};
+        outputs[0].size() / NUM_KEYPOINTS / 2, NUM_KEYPOINTS, 2};
     auto keypoints = xt::adapt(outputs[0], keypoints_shape);
 
     std::vector<size_t> keypoints_scores_shape = {
@@ -133,24 +138,23 @@ public:
     std::vector<Pose> poses;
     poses.reserve(nposes);
 
-    for (size_t pose_i = 0; pose_i < nposes; ++pose_i) {
-      std::unordered_map<std::string, Keypoint> keypoint_map(NUM_KEYPOINTS);
+    size_t pose_i = 0;
+    for (auto keypoint_ptr = xt::axis_begin(keypoints, 0);
+         keypoint_ptr != xt::axis_end(keypoints, 0); ++keypoint_ptr, ++pose_i) {
+      Keypoints keypoint_map;
 
-      xt::xarray<float> keypoint =
-          xt::view(keypoints, pose_i, xt::all(), xt::all());
-
-      size_t point_i = 0;
-      for (auto point = xt::axis_begin(keypoint, 0);
-           point != xt::axis_end(keypoint, 0); ++point, ++point_i) {
-        auto y = (*point)[0];
-        auto x = (*point)[1];
-        Keypoint keypoint(KEYPOINTS[point_i],
-                          std::array<size_t, 2>{{(size_t)y, (size_t)x}},
+      for (auto [point_ptr, point_i] =
+               std::make_pair(xt::axis_slice_begin(*keypoint_ptr, 1), 0);
+           point_ptr != xt::axis_slice_end(*keypoint_ptr, 1);
+           ++point_ptr, ++point_i) {
+        Keypoint keypoint(static_cast<Keypoint::Kind>(point_i),
+                          cv::Point2f((*point_ptr)[1], (*point_ptr)[0]),
                           keypoint_scores(pose_i, point_i));
         if (mirror_) {
-          keypoint.yx()[1] = width() - keypoint.yx()[1];
+          keypoint.point().x = width() - keypoint.point().x;
         }
-        keypoint_map[KEYPOINTS[point_i]] = keypoint;
+
+        keypoint_map[point_i] = keypoint;
       }
       poses.emplace_back(keypoint_map, pose_scores[pose_i]);
     }
@@ -160,7 +164,7 @@ public:
 
 private:
   static std::vector<size_t>
-  make_output_offsets(std::vector<size_t> output_sizes) {
+  make_output_offsets(const std::vector<size_t> &output_sizes) {
     std::vector<size_t> result;
     result.reserve(output_sizes.size() + 1);
     result.push_back(0);
@@ -180,13 +184,43 @@ private:
   std::vector<size_t> output_offsets_;
   bool mirror_;
 }; // namespace pose
+
+static constexpr size_t NUM_EDGES = 19;
+
+using KeypointEdge = std::pair<Keypoint::Kind, Keypoint::Kind>;
+static constexpr std::array<KeypointEdge, NUM_EDGES> EDGES = {
+    std::make_pair(Keypoint::Kind::Nose, Keypoint::Kind::LeftEye),
+    std::make_pair(Keypoint::Kind::Nose, Keypoint::Kind::RightEye),
+    std::make_pair(Keypoint::Kind::Nose, Keypoint::Kind::LeftEar),
+    std::make_pair(Keypoint::Kind::Nose, Keypoint::Kind::RightEar),
+    std::make_pair(Keypoint::Kind::LeftEar, Keypoint::Kind::LeftEye),
+    std::make_pair(Keypoint::Kind::RightEar, Keypoint::Kind::RightEye),
+    std::make_pair(Keypoint::Kind::LeftEye, Keypoint::Kind::RightEye),
+    std::make_pair(Keypoint::Kind::LeftShoulder, Keypoint::Kind::RightShoulder),
+    std::make_pair(Keypoint::Kind::LeftShoulder, Keypoint::Kind::LeftElbow),
+    std::make_pair(Keypoint::Kind::LeftShoulder, Keypoint::Kind::LeftHip),
+    std::make_pair(Keypoint::Kind::RightShoulder, Keypoint::Kind::RightElbow),
+    std::make_pair(Keypoint::Kind::RightShoulder, Keypoint::Kind::RightHip),
+    std::make_pair(Keypoint::Kind::LeftElbow, Keypoint::Kind::LeftWrist),
+    std::make_pair(Keypoint::Kind::RightElbow, Keypoint::Kind::RightWrist),
+    std::make_pair(Keypoint::Kind::LeftHip, Keypoint::Kind::RightHip),
+    std::make_pair(Keypoint::Kind::LeftHip, Keypoint::Kind::LeftKnee),
+    std::make_pair(Keypoint::Kind::RightHip, Keypoint::Kind::RightKnee),
+    std::make_pair(Keypoint::Kind::LeftKnee, Keypoint::Kind::LeftAnkle),
+    std::make_pair(Keypoint::Kind::RightKnee, Keypoint::Kind::RightAnkle),
+};
 } // namespace pose
 
 int main(int argc, const char *argv[]) {
   po::options_description desc("Allowed options");
-  desc.add_options()("help,h", "Test load a model with coral::BasicEngine")(
-      "path,p", po::value<std::string>(),
-      "path to a Tensorflow Lite model")("num,n", po::value<size_t>());
+  desc.add_options()("help,h", "Test a model with coral::BasicEngine")(
+      "model-path,m", po::value<std::string>(),
+      "path to a Tensorflow Lite model")("device-path,d",
+                                         po::value<std::string>(),
+                                         "path to a v4l2 compatible device")(
+      "threshold,t", po::value<float>()->default_value(0.2f),
+      "pose keypoint score threshold")("width,w", po::value<int32_t>())(
+      "height,H", po::value<int32_t>());
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
   po::notify(vm);
@@ -195,22 +229,88 @@ int main(int argc, const char *argv[]) {
     std::cerr << desc << std::endl;
     return 1;
   }
+  auto model_path = vm["model-path"].as<std::string>();
+  auto threshold = vm["threshold"].as<float>();
+  auto width = vm["width"].as<int32_t>();
+  auto height = vm["height"].as<int32_t>();
 
-  if (vm.count("path")) {
-    auto model_path = vm["path"].as<std::string>();
-    pose::Engine engine(model_path);
-    auto arr = xt::load_image("./couple.jpg");
+  pose::Engine engine(std::move(model_path));
+  pose::float_milliseconds inf_time;
 
-    size_t millis = 0;
-    const size_t n = vm["num"].as<size_t>();
-    for (size_t i = 0; i < n; ++i) {
-      std::chrono::milliseconds inf_time;
-      std::tie(std::ignore, inf_time) = engine.detect_poses(arr);
-      millis += inf_time.count();
+  cv::VideoCapture capture(vm["device-path"].as<std::string>(), cv::CAP_V4L2);
+  cv::Mat in_frame;
+  cv::Mat out_frame;
+
+  auto inf_secs = 0.0f;
+  auto cam_secs = 0.0f;
+  auto resize_secs = 0.0f;
+  size_t nframes = 0;
+
+  using seconds = std::chrono::duration<float>;
+
+  while (true) {
+    auto start_frame = std::chrono::steady_clock::now();
+    capture.read(in_frame);
+    auto stop_frame = std::chrono::steady_clock::now();
+    seconds frame_duration = stop_frame - start_frame;
+    cam_secs += frame_duration.count();
+    ++nframes;
+
+    auto start_resize = std::chrono::steady_clock::now();
+    cv::resize(in_frame, out_frame, cv::Size{width, height}, 0, 0,
+               cv::InterpolationFlags::INTER_LINEAR);
+    auto stop_resize = std::chrono::steady_clock::now();
+    seconds resize_duration = stop_resize - start_resize;
+    resize_secs += resize_duration.count();
+
+    auto [poses, inf_millis] = engine.detect_poses(out_frame);
+    inf_secs += std::chrono::duration_cast<seconds>(inf_millis).count();
+    auto true_secs = cam_secs + resize_secs + inf_secs;
+
+    for (auto pose : poses) {
+      std::unordered_map<pose::Keypoint::Kind, cv::Point2f> xys;
+
+      for (const auto &keypoint : pose.keypoints()) {
+        if (keypoint.score() >= threshold) {
+          xys[keypoint.kind()] = keypoint.point();
+          cv::circle(out_frame, keypoint.point(), 6, cv::Scalar(0, 255, 0), -1);
+        }
+      }
+
+      for (auto &[a, b] : pose::EDGES) {
+        if (xys.contains(a) && xys.contains(b)) {
+          cv::line(out_frame, xys[a], xys[b], cv::Scalar(0, 255, 255), 2);
+        }
+      }
+
+      auto model_fps_text =
+          boost::format("Model FPS: %.1f") % (nframes / inf_secs);
+      cv::putText(out_frame, model_fps_text.str(), cv::Point(width / 2, 15),
+                  cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
+                  cv::LINE_AA);
+
+      auto cam_fps_text = boost::format("Cam FPS: %.1f") % (nframes / cam_secs);
+      cv::putText(out_frame, cam_fps_text.str(), cv::Point(width / 2, 30),
+                  cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
+                  cv::LINE_AA);
+
+      auto resize_fps_text =
+          boost::format("Resize FPS: %.1f") % (nframes / resize_secs);
+      cv::putText(out_frame, resize_fps_text.str(), cv::Point(width / 2, 45),
+                  cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
+                  cv::LINE_AA);
+
+      auto true_fps_text =
+          boost::format("True FPS: %.1f") % (nframes / true_secs);
+      cv::putText(out_frame, true_fps_text.str(), cv::Point(width / 2, 60),
+                  cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
+                  cv::LINE_AA);
     }
-    std::cout << (n / (millis / 1000.0)) << " fps" << std::endl;
-    return 0;
-  }
+    cv::imshow("Live", out_frame);
 
-  return 1;
+    if (cv::waitKey(5) >= 0) {
+      break;
+    }
+  }
+  return 0;
 }
