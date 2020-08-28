@@ -39,7 +39,6 @@ pkgs.mkShell {
   name = "edgetpu-shell";
   nativeBuildInputs = [ pkgs.pkgconfig ];
   buildInputs = [
-    pkgs.edgetpu-compiler
     pkgs.tensorflow-lite
     pkgs.libedgetpu.max
     pkgs.libedgetpu.dev
@@ -82,7 +81,7 @@ pkgs.mkShell {
         p.gst-python
       ]
     ))
-  ];
+  ] ++ pkgs.lib.optional (!pkgs.stdenv.isAarch64) pkgs.edgetpu-compiler;
 
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
   CLANG_PATH = "${pkgs.clang_10}/bin/clang";
