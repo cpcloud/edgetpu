@@ -1,69 +1,101 @@
 let
-  pkgs = import /home/cloud/code/nix/nixpkgs {
+  moz_overlay = import (
+    builtins.fetchTarball https://github.com/mozilla/nixpkgs-mozilla/archive/master.tar.gz
+  );
+  raw-pkgs = builtins.fetchTarball https://github.com/cpcloud/nixpkgs/archive/2ee5cb241bb446c6282e285c415695cbe82f8508.tar.gz;
+  pkgs = import raw-pkgs {
     overlays = [
-      (self: super: rec {
-        xtensor = self.stdenv.mkDerivation rec {
-          pname = "xtensor";
-          version = "0.21.5";
-
-          src = self.fetchFromGitHub {
-            owner = "xtensor-stack";
-            repo = "xtensor";
-            rev = version;
-            sha256 = "0nqhma6ps2pypchlmcd99rwq9r2qlj3v3rwyxvdb8iawgkvc0905";
-          };
-
-          nativeBuildInputs = [ self.cmake ];
-          propagatedBuildInputs = [ xtl ];
-        };
-
-        xtl = self.stdenv.mkDerivation rec {
-          pname = "xtl";
-          version = "0.6.16";
-
-          src = self.fetchFromGitHub {
-            owner = "xtensor-stack";
-            repo = "xtl";
-            rev = version;
-            sha256 = "0hkz01l7fc1m79s02hz86cl9nb4rwdvg255r6aj82gnsx5qvxy2l";
-          };
-
-          nativeBuildInputs = [ self.cmake ];
-        };
-
-        xsimd = self.stdenv.mkDerivation rec {
-          pname = "xsimd";
-          version = "7.4.8";
-
-          src = self.fetchFromGitHub {
-            owner = "xtensor-stack";
-            repo = "xsimd";
-            rev = version;
-            sha256 = "1bk9cn7sd3zipfq9jg1bmnanxii6f046p2x8y1pww3qxps03k9fa";
-          };
-
-          nativeBuildInputs = [ self.cmake ];
-          propagatedBuildInputs = [ xtl ];
-        };
-
-        xtensor-io = self.stdenv.mkDerivation rec {
-          pname = "xtensor-io";
-          version = "0.9.0";
-
-          src = self.fetchFromGitHub {
-            owner = "xtensor-stack";
-            repo = "xtensor-io";
-            rev = version;
-            sha256 = "0nsspmxq79191f8dzsl5f8lv0z759dv1a7794mdx2ki4nj6z32yx";
-          };
-
-          nativeBuildInputs = [ self.cmake ];
-          propagatedBuildInputs = [ xtl xtensor self.openimageio2 self.openexr ];
+      moz_overlay
+      (self: super: {
+        v4l-utils = super.v4l-utils.override {
+          withGUI = false;
         };
       })
+      (import ./xtensor.nix)
+      (import ./opencv4.nix)
     ];
   };
+  extensions = [
+    "clippy-preview"
+    "rls-preview"
+    "rustfmt-preview"
+    "rust-analysis"
+    "rust-std"
+    "rust-src"
+  ];
+  channels = [
+    { channel = "stable"; }
+    { channel = "beta"; }
+    { channel = "nightly"; date = "2020-07-12"; }
+  ];
+  environmentVariables = {
+    LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
+    CLANG_PATH = "${pkgs.clang_10}/bin/clang";
+    PROTOC = "${pkgs.protobuf}/bin/protoc";
+  };
+  mkRust = { channel, date ? null }: (
+    pkgs.rustChannelOf { inherit channel date; }
+  ).rust.override { inherit extensions; };
+
 in
 {
   tflite-app = pkgs.callPackage ./tflite-app.nix { };
+  shell = pkgs.mkShell
+    {
+      name = "edgetpu-shell";
+      nativeBuildInputs = [ pkgs.pkgconfig ];
+      buildInputs = [
+        pkgs.tensorflow-lite
+        pkgs.libedgetpu.max
+        pkgs.libedgetpu.dev
+        pkgs.libedgetpu.basic.engine
+        pkgs.libedgetpu.basic.engine-native
+        pkgs.libedgetpu.posenet.decoder-op
+        pkgs.libedgetpu.basic.resource-manager
+        pkgs.libedgetpu.utils.error-reporter
+        pkgs.ccls
+        pkgs.abseil-cpp
+        pkgs.clang_10
+        pkgs.libv4l
+        pkgs.gtk3
+        pkgs.gobject-introspection
+        pkgs.boost
+        pkgs.xtensor
+        pkgs.xtensor-io
+        pkgs.opencv4
+        (
+          (pkgs.gst_all_1.gst-plugins-bad.override {
+            opencv4 = null;
+            directfb = null;
+          }).overrideAttrs (attrs: {
+            mesonFlags = attrs.mesonFlags ++ [ "-Dopencv=disabled" "-Ddirectfb=disabled" ];
+          })
+        )
+        pkgs.gst_all_1.gst-plugins-base
+        pkgs.gst_all_1.gst-plugins-good
+        pkgs.gst_all_1.gst-plugins-ugly
+        pkgs.gst_all_1.gstreamer
+        pkgs.v4l-utils
+        pkgs.flatbuffers
+        (mkRust {
+          channel = "nightly";
+          date = "2020-07-12";
+        })
+        (pkgs.python3.withPackages (
+          p: with p; [
+            p.ipython
+            p.numpy
+            p.pillow
+            p.edgetpu-max
+            p.coloredlogs
+            p.svgwrite
+            p.gst-python
+          ]
+        ))
+      ] ++ pkgs.lib.optional (!pkgs.stdenv.isAarch64) pkgs.edgetpu-compiler;
+
+      LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
+      CLANG_PATH = "${pkgs.clang_10}/bin/clang";
+      PROTOC = "${pkgs.protobuf}/bin/protoc";
+    };
 }
