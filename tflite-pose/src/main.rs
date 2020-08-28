@@ -6,13 +6,10 @@ mod ffi {
     extern "C" {
         include!("wrapper.h");
 
-        type FlatBufferModel;
-        type Interpreter;
+        type BasicEngine;
 
-        fn build_model_from_file(model_path: &str) -> UniquePtr<FlatBufferModel>;
-        fn build_interpreter(model: &FlatBufferModel) -> UniquePtr<Interpreter>;
-        fn num_inputs(interp: &Interpreter) -> usize;
-        fn input_name(interp: &Interpreter, index: usize) -> String;
+        fn build_engine(model_path: &str) -> UniquePtr<BasicEngine>;
+        fn run_inference(engine: UniquePtr<BasicEngine>, data: &[u8]) -> Vec<f32>;
     }
 }
 
@@ -24,16 +21,7 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::from_args();
-    let path = args.model_path.to_string_lossy().to_string();
-    let model = ffi::build_model_from_file(&path);
-    let interpreter = ffi::build_interpreter(&model);
-
-    if interpreter.is_null() {
-        return Err(anyhow!("Foo!"));
-    }
-
-    // for i in 0..ffi::num_inputs(&interpreter) {
-    //     println!("input: {}, name: {}", i, ffi::input_name(&interpreter, i));
-    // }
+    let model_path = args.model_path.to_string_lossy().to_string();
+    let engine = ffi::build_engine(&model_path);
     Ok(())
 }

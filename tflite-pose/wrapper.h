@@ -3,44 +3,32 @@
 #include "rust/cxx.h"
 
 #include "edgetpu.h"
+
 #include "tensorflow/lite/interpreter.h"
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
+
+#include "src/cpp/basic/basic_engine.h"
+#include "src/cpp/posenet/posenet_decoder_op.h"
 
 #include <iostream>
 #include <memory>
 
 namespace pose {
 
-using tflite::FlatBufferModel;
-using tflite::Interpreter;
+using coral::BasicEngine;
 
-auto build_model_from_file(rust::Str model_path) {
-  const std::string path(model_path.data(), model_path.size());
-  return FlatBufferModel::BuildFromFile(path.data());
+auto build_engine(rust::Str model_path) {
+  return std::make_unique<BasicEngine>(std::string(model_path.data(), model_path.size()));
 }
 
-rust::String input_name(const Interpreter &interp, size_t index) {
-  return interp.tensor(index)->name;
-}
-
-auto num_inputs(const Interpreter &interp) { return interp.inputs().size(); }
-
-std::unique_ptr<Interpreter> build_interpreter(const FlatBufferModel &model) {
-  auto edgetpu_context = edgetpu::EdgeTpuManager::GetSingleton()->OpenDevice();
-  tflite::ops::builtin::BuiltinOpResolver resolver;
-  resolver.AddCustom(edgetpu::kCustomOp, edgetpu::RegisterCustomOp());
-  std::unique_ptr<tflite::Interpreter> interpreter;
-  if (tflite::InterpreterBuilder(model, resolver)(&interpreter) != kTfLiteOk) {
-    std::cerr << "Failed to build interpreter." << std::endl;
-  }
-  // Bind given context with interpreter.
-  interpreter->SetExternalContext(kTfLiteEdgeTpuContext, edgetpu_context.get());
-  interpreter->SetNumThreads(1);
-  if (interpreter->AllocateTensors() != kTfLiteOk) {
-    std::cerr << "Failed to allocate tensors." << std::endl;
-  }
-  return interpreter;
+rust::Vec<float> run_inference(
+    std::unique_ptr<BasicEngine> engine,
+    rust::Slice<uint8_t> data,
+) {
+  std::vector<uint8_t> cpp_data(data.data(), data.data() + data.size());
+  auto results = engine->RunInference(cpp_data);
+  return rust::Vec(results[0]);
 }
 
 } // namespace pose

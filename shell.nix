@@ -2,7 +2,16 @@ let
   moz_overlay = import (
     builtins.fetchTarball https://github.com/mozilla/nixpkgs-mozilla/archive/master.tar.gz
   );
-  pkgs = import /home/cloud/code/nix/nixpkgs { overlays = [ moz_overlay ]; };
+  pkgs = import /home/cloud/code/nix/nixpkgs {
+    overlays = [
+      moz_overlay
+      (self: super: {
+        v4l-utils = super.v4l-utils.override {
+          withGUI = false;
+        };
+      })
+    ];
+  };
   extensions = [
     "clippy-preview"
     "rls-preview"
@@ -24,16 +33,22 @@ let
   mkRust = { channel, date ? null }: (
     pkgs.rustChannelOf { inherit channel date; }
   ).rust.override { inherit extensions; };
+
 in
 pkgs.mkShell {
   name = "edgetpu-shell";
   nativeBuildInputs = [ pkgs.pkgconfig ];
   buildInputs = [
+    pkgs.edgetpu-compiler
     pkgs.tensorflow-lite
     pkgs.libedgetpu.max
     pkgs.libedgetpu.dev
     pkgs.libedgetpu.basic.engine
-    pkgs.libusb
+    pkgs.libedgetpu.basic.engine-native
+    pkgs.libedgetpu.posenet.decoder-op
+    pkgs.libedgetpu.basic.resource-manager
+    pkgs.libedgetpu.utils.error-reporter
+    pkgs.abseil-cpp
     pkgs.clang_10
     pkgs.libv4l
     pkgs.gtk3
@@ -50,13 +65,8 @@ pkgs.mkShell {
     pkgs.gst_all_1.gst-plugins-good
     pkgs.gst_all_1.gst-plugins-ugly
     pkgs.gst_all_1.gstreamer
-    (
-      pkgs.v4l-utils.override {
-        withGUI = false;
-      }
-    )
+    pkgs.v4l-utils
     pkgs.flatbuffers
-    # (pkgs.callPackage ./tflite-app.nix { })
     (mkRust {
       channel = "nightly";
       date = "2020-07-12";
