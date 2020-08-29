@@ -8,7 +8,7 @@ let
         };
       })
       (import ./xtensor.nix)
-      # (import ./opencv4.nix)
+      (import ./opencv4.nix)
     ];
   };
   guiLibs = pkgs.lib.optionals (!pkgs.stdenv.isAarch64) [
@@ -33,6 +33,7 @@ in
           libedgetpu.posenet.decoder-op
           libedgetpu.basic.resource-manager
           libedgetpu.utils.error-reporter
+          clang_10
           abseil-cpp
           flatbuffers
           libv4l

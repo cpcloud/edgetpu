@@ -1,47 +1,55 @@
-{ stdenv
+{ llvmPackages_latest
 , autoPatchelfHook
 , tensorflow-lite
 , flatbuffers
-, libusb
 , boost
 , libedgetpu
 , abseil-cpp
-, enableDebugging
 , xtensor
-, xtensor-io
 , opencv4
 , pkgconfig
+, gst_all_1
+, gobject-introspection
 }:
-stdenv.mkDerivation {
+llvmPackages_latest.stdenv.mkDerivation {
   pname = "tflite-app";
   version = "0.1.0";
   nativeBuildInputs = [
-    pkgconfig
     autoPatchelfHook
-    stdenv.cc.cc.lib
+    llvmPackages_latest.stdenv.cc.cc.lib
+    pkgconfig
   ];
   buildInputs = [
-    libedgetpu.max
-    libedgetpu.dev
-    libedgetpu.basic.engine
-    libedgetpu.basic.engine-native
-    libedgetpu.posenet.decoder-op
-    libedgetpu.basic.resource-manager
-    libedgetpu.utils.error-reporter
     abseil-cpp
     tensorflow-lite
     flatbuffers
     boost
     xtensor
     opencv4
-  ];
+    gst_all_1.gst-plugins-bad
+    gst_all_1.gst-plugins-base
+    gst_all_1.gst-plugins-good
+    gst_all_1.gst-plugins-ugly
+    gst_all_1.gstreamer
+    gobject-introspection
+  ] ++ (
+    with libedgetpu; [
+      max
+      dev
+      basic.engine
+      basic.engine-native
+      posenet.decoder-op
+      basic.resource-manager
+      utils.error-reporter
+    ]
+  );
   dontConfigure = true;
   buildPhase = ''
     $CXX \
       -o tflite-app \
       -O3 \
       -flto \
-      -std=c++2a \
+      -std=c++17 \
       main.cpp \
       $(pkg-config --cflags opencv4) \
       $(pkg-config --libs opencv4) \
@@ -59,4 +67,5 @@ stdenv.mkDerivation {
     install tflite-app $out/bin
   '';
   src = ./app;
+  GST_DEBUG = 4;
 }

@@ -2,17 +2,17 @@ self: super:
 {
   opencv4 = (
     super.opencv4.override {
-      enableContrib = false;
+      enableContrib = true;
       enableCuda = false;
       enableEigen = false;
       enableEXR = false;
       enableWebP = false;
       enableOpenblas = false;
       enableIpp = false;
-      enableFfmpeg = false; # camd_mock needs this for videoio; TODO: remove when sensord_mock exists
-      enableGStreamer = false;
+      enableFfmpeg = false;
+      enableGStreamer = true;
       enableGtk2 = false;
-      enableGtk3 = true;
+      enableGtk3 = false;
       enableTesseract = false;
       enableTbb = false;
       enableVtk = false;
@@ -20,9 +20,8 @@ self: super:
       enableGPhoto2 = false;
       enableDC1394 = false;
       enableJPEG2K = false;
-      enableJPEG = false; # needed for the pak file writer
-      enablePNG = false; # sensord_snap uses imwrite to produce PNGs; TODO: look into the image crate to replace this
-      enablePython = false;
+      enableJPEG = false;
+      enablePNG = false;
       enableTIFF = false;
       enableDocs = false;
     }
@@ -42,6 +41,7 @@ self: super:
         "-DBUILD_opencv_apps=OFF"
         "-DWITH_OPENCL=OFF"
         "-DWITH_LAPACK=OFF"
+        "-DWITH_V4L=ON"
         "-DWITH_ITT=OFF"
         "-DWITH_PROTOBUF=OFF"
         "-DWITH_IMGCODEC_HDR=OFF"
@@ -50,7 +50,7 @@ self: super:
         "-DWITH_IMGCODEC_PFM=OFF"
         "-DWITH_QUIRC=OFF"
         "-DWITH_WEBP=OFF"
-        "-DBUILD_LIST=videoio,highgui"
+        "-DBUILD_LIST=videoio,video,calib3d,objdetect,bgsegm"
       ] ++ lib.filter (f: !lib.strings.hasInfix "WITH_OPENMP" f) (lib.flatten attrs.cmakeFlags);
     }
   );

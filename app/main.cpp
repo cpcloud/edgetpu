@@ -14,12 +14,12 @@
 #include "xtensor/xpad.hpp"
 #include "xtensor/xview.hpp"
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/format.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
 
 #include <array>
-#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -27,13 +27,45 @@
 #include <vector>
 
 #include "opencv2/core.hpp"
-#include "opencv2/highgui.hpp"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/videoio.hpp"
 
 namespace po = boost::program_options;
 
+template <typename T>
+using Milliseconds =
+    std::chrono::duration<T, std::chrono::milliseconds::period>;
+
+template <typename T>
+using Seconds = std::chrono::duration<T, std::chrono::seconds::period>;
+
 namespace pose {
+
+class InputDimensionsError : public std::exception {
+public:
+  explicit InputDimensionsError(size_t ndims)
+      : std::exception(), ndims_(ndims) {}
+
+private:
+  size_t ndims_;
+};
+
+class FirstDimensionSizeError : public std::exception {
+public:
+  explicit FirstDimensionSizeError(size_t first_dim_numel)
+      : std::exception(), first_dim_numel_(first_dim_numel) {}
+
+private:
+  size_t first_dim_numel_;
+};
+
+class DepthSizeError : public std::exception {
+public:
+  explicit DepthSizeError(size_t depth) : std::exception(), depth_(depth) {}
+
+private:
+  size_t depth_;
+};
 
 class Keypoint {
 public:
@@ -54,7 +86,8 @@ public:
     LeftKnee,
     RightKnee,
     LeftAnkle,
-    RightAnkle
+    RightAnkle,
+    NumKeypoints
   };
 
 public:
@@ -74,7 +107,7 @@ private:
 };
 
 static constexpr std::size_t NUM_KEYPOINTS =
-    static_cast<size_t>(Keypoint::Kind::RightAnkle) + 1;
+    static_cast<size_t>(Keypoint::Kind::NumKeypoints);
 
 using Keypoints = std::array<Keypoint, NUM_KEYPOINTS>;
 
@@ -91,25 +124,24 @@ private:
   float score_;
 };
 
-using float_milliseconds =
-    std::chrono::duration<float, std::chrono::milliseconds::period>;
+using Poses = std::vector<Pose>;
 
 class Engine {
 public:
   explicit Engine(std::string model_path, bool mirror = false)
-      : engine_(std::make_unique<coral::BasicEngine>(model_path)),
-        input_tensor_shape_(engine_->get_input_tensor_shape()),
+      : engine_(model_path),
+        input_tensor_shape_(engine_.get_input_tensor_shape()),
         output_offsets_(Engine::make_output_offsets(
-            engine_->get_all_output_tensors_sizes())),
+            engine_.get_all_output_tensors_sizes())),
         mirror_(mirror) {
     if (input_tensor_shape_.size() != 4) {
-      throw std::exception();
+      throw InputDimensionsError(input_tensor_shape_.size());
     }
     if (input_tensor_shape_[0] != 1) {
-      throw std::exception();
+      throw FirstDimensionSizeError(input_tensor_shape_[0]);
     }
     if (depth() != 3) {
-      throw std::exception();
+      throw DepthSizeError(depth());
     }
   }
 
@@ -117,29 +149,28 @@ public:
 
   size_t depth() const { return input_tensor_shape_[3]; }
 
-  std::pair<std::vector<Pose>, float_milliseconds>
-  detect_poses(const cv::Mat &raw_img) {
-    std::vector<uint8_t> input(raw_img.total() * 3);
-    std::copy(raw_img.data, raw_img.data + raw_img.total() * 3, input.begin());
-    auto outputs = engine_->RunInference(input);
+  std::pair<Poses, Milliseconds<float>> detect_poses(const cv::Mat &raw_img) {
+    const size_t nbytes = raw_img.step[0] * raw_img.rows;
+    std::vector<uint8_t> input(raw_img.data, raw_img.data + nbytes);
+    auto outputs = engine_.RunInference(input);
 
-    float_milliseconds inf_time(engine_->get_inference_time());
+    Milliseconds<float> inf_time(engine_.get_inference_time());
 
-    std::vector<size_t> keypoints_shape = {
-        outputs[0].size() / NUM_KEYPOINTS / 2, NUM_KEYPOINTS, 2};
-    auto keypoints = xt::adapt(outputs[0], keypoints_shape);
+    auto keypoints = xt::adapt(
+        outputs[0], std::vector<size_t>{{outputs[0].size() / NUM_KEYPOINTS / 2,
+                                         NUM_KEYPOINTS, 2}});
 
-    std::vector<size_t> keypoints_scores_shape = {
-        outputs[1].size() / NUM_KEYPOINTS, NUM_KEYPOINTS};
-    auto keypoint_scores = xt::adapt(outputs[1], keypoints_scores_shape);
+    auto keypoint_scores = xt::adapt(
+        outputs[1], std::vector<size_t>{
+                        {outputs[1].size() / NUM_KEYPOINTS, NUM_KEYPOINTS}});
     auto pose_scores = outputs[2];
     auto nposes = static_cast<size_t>(outputs[3][0]);
 
-    std::vector<Pose> poses;
+    Poses poses;
     poses.reserve(nposes);
 
-    size_t pose_i = 0;
-    for (auto keypoint_ptr = xt::axis_begin(keypoints, 0);
+    for (auto [keypoint_ptr, pose_i] =
+             std::make_pair(xt::axis_begin(keypoints, 0), 0);
          keypoint_ptr != xt::axis_end(keypoints, 0); ++keypoint_ptr, ++pose_i) {
       Keypoints keypoint_map;
 
@@ -165,29 +196,24 @@ public:
 private:
   static std::vector<size_t>
   make_output_offsets(const std::vector<size_t> &output_sizes) {
-    std::vector<size_t> result;
-    result.reserve(output_sizes.size() + 1);
-    result.push_back(0);
-
-    size_t offset = 0;
-    for (auto size : output_sizes) {
-      offset += size;
-      result.push_back(offset);
-    }
-
+    std::vector<size_t> result(output_sizes.size() + 1, 0);
+    std::partial_sum(output_sizes.cbegin(), output_sizes.cend(),
+                     result.begin() + 1);
     return result;
   }
 
 private:
-  std::unique_ptr<coral::BasicEngine> engine_;
-  std::vector<int32_t> input_tensor_shape_;
-  std::vector<size_t> output_offsets_;
+  coral::BasicEngine engine_;
+  const std::vector<int32_t> input_tensor_shape_;
+  const std::vector<size_t> output_offsets_;
   bool mirror_;
 }; // namespace pose
 
+namespace {
 static constexpr size_t NUM_EDGES = 19;
-
 using KeypointEdge = std::pair<Keypoint::Kind, Keypoint::Kind>;
+} // namespace
+
 static constexpr std::array<KeypointEdge, NUM_EDGES> EDGES = {
     std::make_pair(Keypoint::Kind::Nose, Keypoint::Kind::LeftEye),
     std::make_pair(Keypoint::Kind::Nose, Keypoint::Kind::RightEye),
@@ -234,37 +260,49 @@ int main(int argc, const char *argv[]) {
   auto width = vm["width"].as<int32_t>();
   auto height = vm["height"].as<int32_t>();
 
-  pose::Engine engine(std::move(model_path));
-  pose::float_milliseconds inf_time;
-
   cv::VideoCapture capture(vm["device-path"].as<std::string>(), cv::CAP_V4L2);
+  capture.set(cv::CAP_PROP_FRAME_WIDTH, 1280.0);
+  capture.set(cv::CAP_PROP_FRAME_HEIGHT, 720.0);
+
   cv::Mat in_frame;
   cv::Mat out_frame;
+  cv::Mat stream_out_frame;
 
-  auto inf_secs = 0.0f;
-  auto cam_secs = 0.0f;
-  auto resize_secs = 0.0f;
+  cv::Size frame_dims{{width, height}};
+
+  static const std::string pipeline_components[] = {
+      "appsrc", "shmsink socket-path=/tmp/out.sock wait-for-connection=false"};
+  cv::VideoWriter writer;
+  auto fourcc = capture.get(cv::CAP_PROP_FOURCC);
+  if (!writer.open(boost::algorithm::join(pipeline_components, " ! "),
+                   cv::CAP_GSTREAMER, fourcc, capture.get(cv::CAP_PROP_FPS),
+                   frame_dims)) {
+    std::cerr << "unable to open GStreamer writer" << std::endl;
+    return 1;
+  }
+
+  Seconds<float> inf_secs(0.0f);
+  Seconds<float> cam_secs(0.0f);
+  Seconds<float> resize_secs(0.0f);
   size_t nframes = 0;
 
-  using seconds = std::chrono::duration<float>;
+  pose::Engine engine(model_path);
 
   while (true) {
     auto start_frame = std::chrono::steady_clock::now();
     capture.read(in_frame);
     auto stop_frame = std::chrono::steady_clock::now();
-    seconds frame_duration = stop_frame - start_frame;
-    cam_secs += frame_duration.count();
+    cam_secs += stop_frame - start_frame;
     ++nframes;
 
     auto start_resize = std::chrono::steady_clock::now();
-    cv::resize(in_frame, out_frame, cv::Size{width, height}, 0, 0,
+    cv::resize(in_frame, out_frame, frame_dims, 0, 0,
                cv::InterpolationFlags::INTER_LINEAR);
     auto stop_resize = std::chrono::steady_clock::now();
-    seconds resize_duration = stop_resize - start_resize;
-    resize_secs += resize_duration.count();
+    resize_secs += stop_resize - start_resize;
 
     auto [poses, inf_millis] = engine.detect_poses(out_frame);
-    inf_secs += std::chrono::duration_cast<seconds>(inf_millis).count();
+    inf_secs += inf_millis;
     auto true_secs = cam_secs + resize_secs + inf_secs;
 
     for (auto pose : poses) {
@@ -278,39 +316,42 @@ int main(int argc, const char *argv[]) {
       }
 
       for (auto &[a, b] : pose::EDGES) {
-        if (xys.contains(a) && xys.contains(b)) {
-          cv::line(out_frame, xys[a], xys[b], cv::Scalar(0, 255, 255), 2);
+        auto apair = xys.find(a);
+        auto bpair = xys.find(b);
+        if (apair != xys.end() && bpair != xys.end()) {
+          auto axy = apair->second;
+          auto bxy = bpair->second;
+          cv::line(out_frame, axy, bxy, cv::Scalar(0, 255, 255), 2);
         }
       }
-
-      auto model_fps_text =
-          boost::format("Model FPS: %.1f") % (nframes / inf_secs);
-      cv::putText(out_frame, model_fps_text.str(), cv::Point(width / 2, 15),
-                  cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
-                  cv::LINE_AA);
-
-      auto cam_fps_text = boost::format("Cam FPS: %.1f") % (nframes / cam_secs);
-      cv::putText(out_frame, cam_fps_text.str(), cv::Point(width / 2, 30),
-                  cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
-                  cv::LINE_AA);
-
-      auto resize_fps_text =
-          boost::format("Resize FPS: %.1f") % (nframes / resize_secs);
-      cv::putText(out_frame, resize_fps_text.str(), cv::Point(width / 2, 45),
-                  cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
-                  cv::LINE_AA);
-
-      auto true_fps_text =
-          boost::format("True FPS: %.1f") % (nframes / true_secs);
-      cv::putText(out_frame, true_fps_text.str(), cv::Point(width / 2, 60),
-                  cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
-                  cv::LINE_AA);
     }
-    cv::imshow("Live", out_frame);
 
-    if (cv::waitKey(5) >= 0) {
-      break;
-    }
+    auto model_fps_text =
+        boost::format("Model FPS: %.1f") % (nframes / inf_secs.count());
+    cv::putText(out_frame, model_fps_text.str(), cv::Point(width / 2, 15),
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
+                cv::LINE_AA);
+
+    auto cam_fps_text =
+        boost::format("Cam FPS: %.1f") % (nframes / cam_secs.count());
+    cv::putText(out_frame, cam_fps_text.str(), cv::Point(width / 2, 30),
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
+                cv::LINE_AA);
+
+    auto resize_fps_text =
+        boost::format("Resize FPS: %.1f") % (nframes / resize_secs.count());
+    cv::putText(out_frame, resize_fps_text.str(), cv::Point(width / 2, 45),
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
+                cv::LINE_AA);
+
+    auto true_fps_text =
+        boost::format("True FPS: %.1f") % (nframes / true_secs.count());
+    cv::putText(out_frame, true_fps_text.str(), cv::Point(width / 2, 60),
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
+                cv::LINE_AA);
+
+    cv::resize(out_frame, stream_out_frame, in_frame.size());
+    writer.write(stream_out_frame);
   }
   return 0;
 }
