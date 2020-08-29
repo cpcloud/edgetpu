@@ -270,11 +270,14 @@ int main(int argc, const char *argv[]) {
 
   cv::Size frame_dims{{width, height}};
 
+  static const std::string pipeline_components[] = {
+      "appsrc", "shmsink socket-path=/tmp/out.sock wait-for-connection=false"};
   cv::VideoWriter writer;
   auto fourcc = capture.get(cv::CAP_PROP_FOURCC);
-  if (!writer.open("out.mp4", cv::CAP_FFMPEG, fourcc,
-                   capture.get(cv::CAP_PROP_FPS), frame_dims)) {
-    std::cerr << "unable to open ffmpeg writer" << std::endl;
+  if (!writer.open(boost::algorithm::join(pipeline_components, " ! "),
+                   cv::CAP_GSTREAMER, fourcc, capture.get(cv::CAP_PROP_FPS),
+                   frame_dims)) {
+    std::cerr << "unable to open GStreamer writer" << std::endl;
     return 1;
   }
 
