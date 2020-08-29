@@ -275,7 +275,7 @@ int main(int argc, const char *argv[]) {
   cv::VideoWriter writer;
   auto fourcc = capture.get(cv::CAP_PROP_FOURCC);
   if (!writer.open(boost::algorithm::join(pipeline_components, " ! "),
-                   cv::CAP_GSTREAMER, fourcc, capture.get(cv::CAP_PROP_FPS),
+                   cv::CAP_GSTREAMER, 0, capture.get(cv::CAP_PROP_FPS),
                    frame_dims)) {
     std::cerr << "unable to open GStreamer writer" << std::endl;
     return 1;
