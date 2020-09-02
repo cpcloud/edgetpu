@@ -14,7 +14,6 @@ let
   guiLibs = pkgs.lib.optionals (!pkgs.stdenv.isAarch64) [
     pkgs.gtk3
   ];
-
 in
 {
   tflite-app = pkgs.callPackage ./tflite-app.nix { };
@@ -25,6 +24,7 @@ in
       buildInputs = guiLibs ++ (
         with pkgs;
         [
+          llvmPackages_latest.stdenv
           tensorflow-lite
           libedgetpu.max
           libedgetpu.dev
@@ -36,16 +36,25 @@ in
           clang_10
           abseil-cpp
           flatbuffers
-          libv4l
+          ccls
           boost
           xtensor
           opencv4
-          gst_all_1.gst-plugins-bad
+          tinyformat
+          (
+            (pkgs.gst_all_1.gst-plugins-bad.override {
+              opencv4 = null;
+            }).overrideAttrs (attrs: {
+              mesonFlags = attrs.mesonFlags ++ [ "-Dopencv=disabled" ];
+            })
+          )
           gst_all_1.gst-plugins-base
           gst_all_1.gst-plugins-good
           gst_all_1.gst-plugins-ugly
           gst_all_1.gstreamer
           gobject-introspection
+          meson
+          libv4l
           v4l-utils
           (python3.withPackages (
             p: [
@@ -57,6 +66,8 @@ in
               p.svgwrite
               p.gst-python
               p.opencv4
+              p.click
+              p.ipdb
             ]
           ))
         ]

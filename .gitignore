@@ -34,3 +34,7 @@ result
 target/
 Cargo.lock
 .ccls-cache
+bin/
+.depend
+*.tflite
+app/tflite-app

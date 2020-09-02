@@ -8,10 +8,10 @@
 , xtensor
 , opencv4
 , pkgconfig
-, gst_all_1
-, gobject-introspection
+, tinyformat
+, enableDebugging
 }:
-llvmPackages_latest.stdenv.mkDerivation {
+(llvmPackages_latest.stdenv.mkDerivation {
   pname = "tflite-app";
   version = "0.1.0";
   nativeBuildInputs = [
@@ -25,13 +25,8 @@ llvmPackages_latest.stdenv.mkDerivation {
     flatbuffers
     boost
     xtensor
+    tinyformat
     opencv4
-    gst_all_1.gst-plugins-bad
-    gst_all_1.gst-plugins-base
-    gst_all_1.gst-plugins-good
-    gst_all_1.gst-plugins-ugly
-    gst_all_1.gstreamer
-    gobject-introspection
   ] ++ (
     with libedgetpu; [
       max
@@ -43,29 +38,16 @@ llvmPackages_latest.stdenv.mkDerivation {
       utils.error-reporter
     ]
   );
-  dontConfigure = true;
+  dontStrip = true;
   buildPhase = ''
-    $CXX \
-      -o tflite-app \
-      -O3 \
-      -flto \
-      -std=c++17 \
-      main.cpp \
-      $(pkg-config --cflags opencv4) \
-      $(pkg-config --libs opencv4) \
-      -lboost_program_options \
-      -ledgetpu \
-      -ledgetpu_basic_engine \
-      -ledgetpu_basic_engine_native \
-      -ltensorflow-lite \
-      -lrt \
-      -lpthread \
-      -ldl
+    make clean
+    make -j $NIX_BUILD_CORES
   '';
+  dontConfigure = true;
   installPhase = ''
-    mkdir -p "$out/bin"
-    install tflite-app $out/bin
+    mkdir -p $out/bin
+    rm -f *.o
+    cp tflite-app $out/bin
   '';
   src = ./app;
-  GST_DEBUG = 4;
-}
+})

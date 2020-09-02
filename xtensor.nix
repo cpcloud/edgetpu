@@ -57,4 +57,25 @@ self: super: rec {
     nativeBuildInputs = [ self.cmake ];
     propagatedBuildInputs = [ xtl xtensor self.openimageio2 self.openexr ];
   };
+
+  tinyformat = self.stdenv.mkDerivation rec {
+    pname = "tinyformat";
+    version = "v2.3.0";
+
+    src = self.fetchFromGitHub {
+      owner = "c42f";
+      repo = "tinyformat";
+      rev = version;
+      sha256 = "0j8bxrg7i4rn98iqpfh03krshgcbwh8hq8nm0p3sfdqpira3vi3y";
+    };
+
+    dontBuild = true;
+
+    installPhase = ''
+      mkdir -p $out/include
+      cp $src/tinyformat.h $out/include
+    '';
+
+    nativeBuildInputs = [ self.cmake ];
+  };
 }

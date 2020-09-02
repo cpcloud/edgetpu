@@ -2,7 +2,7 @@ self: super:
 {
   opencv4 = (
     super.opencv4.override {
-      enableContrib = true;
+      enableContrib = false;
       enableCuda = false;
       enableEigen = false;
       enableEXR = false;
@@ -10,9 +10,9 @@ self: super:
       enableOpenblas = false;
       enableIpp = false;
       enableFfmpeg = false;
-      enableGStreamer = true;
+      enableGStreamer = false;
       enableGtk2 = false;
-      enableGtk3 = false;
+      enableGtk3 = !self.stdenv.isAarch64;
       enableTesseract = false;
       enableTbb = false;
       enableVtk = false;
@@ -20,10 +20,12 @@ self: super:
       enableGPhoto2 = false;
       enableDC1394 = false;
       enableJPEG2K = false;
-      enableJPEG = false;
+      enableJPEG = true;
       enablePNG = false;
       enableTIFF = false;
       enableDocs = false;
+      enablePython = true;
+      pythonPackages = self.python3Packages;
     }
   ).overrideAttrs (
     attrs:
@@ -50,7 +52,7 @@ self: super:
         "-DWITH_IMGCODEC_PFM=OFF"
         "-DWITH_QUIRC=OFF"
         "-DWITH_WEBP=OFF"
-        "-DBUILD_LIST=videoio,video,calib3d,objdetect,bgsegm"
+        "-DBUILD_LIST=videoio,highgui,python3"
       ] ++ lib.filter (f: !lib.strings.hasInfix "WITH_OPENMP" f) (lib.flatten attrs.cmakeFlags);
     }
   );
