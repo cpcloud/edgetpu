@@ -38,3 +38,8 @@ bin/
 .depend
 *.tflite
 app/tflite-app
+*.jpg
+*.tflite
+*.json
+__pycache__/
+*.pyc
