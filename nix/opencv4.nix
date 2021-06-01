@@ -19,7 +19,6 @@ self: super:
       enableOvis = false;
       enableGPhoto2 = false;
       enableDC1394 = false;
-      enableJPEG2K = false;
       enableJPEG = false;
       enablePNG = false;
       enableTIFF = false;
