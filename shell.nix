@@ -20,6 +20,8 @@ pkgs.mkShell {
   buildInputs = guiPkgs ++ (
     with pkgs;
     [
+      cargo-edit
+      cargo-udeps
       niv
       tensorflow-lite
       clang_10
@@ -36,6 +38,7 @@ pkgs.mkShell {
       gst_all_1.gstreamer
       gobject-introspection
       v4l-utils
+      rustToolchain
       (python3.withPackages (
         p: [
           p.ipython
