@@ -1,12 +1,6 @@
 let
-  sources = import ./nix/sources.nix;
-  pkgs = import sources.nixpkgs {
-    overlays = [
-      (import ./nix/v4l-utils.nix)
-      (import ./nix/xtensor.nix)
-      (import ./nix/opencv4.nix)
-    ];
-  };
+  sources = import ./nix;
+  inherit (sources) pkgs;
   guiPkgs = pkgs.lib.optionals (!pkgs.stdenv.isAarch64) [
     pkgs.gtk3
   ];
