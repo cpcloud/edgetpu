@@ -10,9 +10,7 @@ sources // {
       (self: super: {
         naersk = self.callPackage sources.naersk { };
       })
-      (self: super: {
-        fenix = import sources.fenix { };
-      })
+      (import sources.fenix)
       (self: super: {
         inherit (self.fenix.latest)
           rustc
