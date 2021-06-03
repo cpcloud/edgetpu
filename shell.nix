@@ -22,7 +22,6 @@ pkgs.mkShell {
     [
       cargo-edit
       cargo-udeps
-      niv
       tensorflow-lite
       clang_10
       abseil-cpp
