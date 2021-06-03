@@ -11,9 +11,12 @@
 , gst_all_1
 , gobject-introspection
 }:
-llvmPackages_latest.stdenv.mkDerivation {
+let
   pname = "tflite-app";
-  version = "0.1.0";
+in
+llvmPackages_latest.stdenv.mkDerivation {
+  inherit pname;
+  version = "1.0.0";
   nativeBuildInputs = [
     autoPatchelfHook
     llvmPackages_latest.stdenv.cc.cc.lib
@@ -46,11 +49,11 @@ llvmPackages_latest.stdenv.mkDerivation {
   dontConfigure = true;
   buildPhase = ''
     $CXX \
-      -o tflite-app \
+      -o ${pname} \
       -O3 \
-      -flto \
       -std=c++17 \
       main.cpp \
+      -pthread \
       $(pkg-config --cflags opencv4) \
       $(pkg-config --libs opencv4) \
       -lboost_program_options \
@@ -59,13 +62,12 @@ llvmPackages_latest.stdenv.mkDerivation {
       -ledgetpu_basic_engine_native \
       -ltensorflow-lite \
       -lrt \
-      -lpthread \
       -ldl
   '';
   installPhase = ''
     mkdir -p "$out/bin"
-    install tflite-app $out/bin
+    install ${pname} $out/bin
   '';
+
   src = ./app;
-  GST_DEBUG = 4;
 }
