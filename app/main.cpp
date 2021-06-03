@@ -43,28 +43,29 @@ namespace pose {
 
 class InputDimensionsError : public std::exception {
 public:
-  explicit InputDimensionsError(size_t ndims)
+  explicit InputDimensionsError(std::size_t ndims)
       : std::exception(), ndims_(ndims) {}
 
 private:
-  size_t ndims_;
+  std::size_t ndims_;
 };
 
 class FirstDimensionSizeError : public std::exception {
 public:
-  explicit FirstDimensionSizeError(size_t first_dim_numel)
+  explicit FirstDimensionSizeError(std::size_t first_dim_numel)
       : std::exception(), first_dim_numel_(first_dim_numel) {}
 
 private:
-  size_t first_dim_numel_;
+  std::size_t first_dim_numel_;
 };
 
 class DepthSizeError : public std::exception {
 public:
-  explicit DepthSizeError(size_t depth) : std::exception(), depth_(depth) {}
+  explicit DepthSizeError(std::size_t depth)
+      : std::exception(), depth_(depth) {}
 
 private:
-  size_t depth_;
+  std::size_t depth_;
 };
 
 class Keypoint {
@@ -106,8 +107,8 @@ private:
   float score_;
 };
 
-static constexpr std::size_t NUM_KEYPOINTS =
-    static_cast<size_t>(Keypoint::Kind::NumKeypoints);
+static constexpr auto NUM_KEYPOINTS =
+    static_cast<std::size_t>(Keypoint::Kind::NumKeypoints);
 
 using Keypoints = std::array<Keypoint, NUM_KEYPOINTS>;
 
@@ -145,26 +146,27 @@ public:
     }
   }
 
-  size_t width() const { return input_tensor_shape_[2]; }
+  std::size_t width() const { return input_tensor_shape_[2]; }
 
-  size_t depth() const { return input_tensor_shape_[3]; }
+  std::size_t depth() const { return input_tensor_shape_[3]; }
 
   std::pair<Poses, Milliseconds<float>> detect_poses(const cv::Mat &raw_img) {
-    const size_t nbytes = raw_img.step[0] * raw_img.rows;
+    const std::size_t nbytes = raw_img.step[0] * raw_img.rows;
     std::vector<uint8_t> input(raw_img.data, raw_img.data + nbytes);
     auto outputs = engine_.RunInference(input);
 
     Milliseconds<float> inf_time(engine_.get_inference_time());
 
     auto keypoints = xt::adapt(
-        outputs[0], std::vector<size_t>{{outputs[0].size() / NUM_KEYPOINTS / 2,
-                                         NUM_KEYPOINTS, 2}});
+        outputs[0],
+        std::vector<std::size_t>{
+            {outputs[0].size() / NUM_KEYPOINTS / 2, NUM_KEYPOINTS, 2}});
 
     auto keypoint_scores = xt::adapt(
-        outputs[1], std::vector<size_t>{
+        outputs[1], std::vector<std::size_t>{
                         {outputs[1].size() / NUM_KEYPOINTS, NUM_KEYPOINTS}});
     auto pose_scores = outputs[2];
-    auto nposes = static_cast<size_t>(outputs[3][0]);
+    auto nposes = static_cast<std::size_t>(outputs[3][0]);
 
     Poses poses;
     poses.reserve(nposes);
@@ -194,9 +196,9 @@ public:
   }
 
 private:
-  static std::vector<size_t>
-  make_output_offsets(const std::vector<size_t> &output_sizes) {
-    std::vector<size_t> result(output_sizes.size() + 1, 0);
+  static std::vector<std::size_t>
+  make_output_offsets(const std::vector<std::size_t> &output_sizes) {
+    std::vector<std::size_t> result(output_sizes.size() + 1, 0);
     std::partial_sum(output_sizes.cbegin(), output_sizes.cend(),
                      result.begin() + 1);
     return result;
@@ -205,12 +207,12 @@ private:
 private:
   coral::BasicEngine engine_;
   const std::vector<int32_t> input_tensor_shape_;
-  const std::vector<size_t> output_offsets_;
+  const std::vector<std::size_t> output_offsets_;
   bool mirror_;
 }; // namespace pose
 
 namespace {
-static constexpr size_t NUM_EDGES = 19;
+static constexpr std::size_t NUM_EDGES = 19;
 using KeypointEdge = std::pair<Keypoint::Kind, Keypoint::Kind>;
 } // namespace
 
@@ -264,22 +266,9 @@ int main(int argc, const char *argv[]) {
   capture.set(cv::CAP_PROP_FRAME_WIDTH, 1280.0);
   capture.set(cv::CAP_PROP_FRAME_HEIGHT, 720.0);
 
-  cv::Mat in_frame;
-  cv::Mat out_frame;
-  cv::Mat stream_out_frame;
+  cv::Mat in_frame, out_frame, stream_out_frame;
 
   cv::Size frame_dims{{width, height}};
-
-  static const std::string pipeline_components[] = {
-      "appsrc", "shmsink socket-path=/tmp/out.sock wait-for-connection=false"};
-  cv::VideoWriter writer;
-  auto fourcc = capture.get(cv::CAP_PROP_FOURCC);
-  if (!writer.open(boost::algorithm::join(pipeline_components, " ! "),
-                   cv::CAP_GSTREAMER, fourcc, capture.get(cv::CAP_PROP_FPS),
-                   frame_dims)) {
-    std::cerr << "unable to open GStreamer writer" << std::endl;
-    return 1;
-  }
 
   Seconds<float> inf_secs(0.0f);
   Seconds<float> cam_secs(0.0f);
@@ -351,7 +340,7 @@ int main(int argc, const char *argv[]) {
                 cv::LINE_AA);
 
     cv::resize(out_frame, stream_out_frame, in_frame.size());
-    writer.write(stream_out_frame);
   }
+
   return 0;
 }
