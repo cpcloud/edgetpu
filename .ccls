@@ -1,4 +1,5 @@
+clang
+%c -std=c11
 %cpp -std=c++17
 %cpp -pthread
--o tflite-app
--flto
+-I/nix/store/w96k4a0ya23k2aj368k9s94krins6xyq-opencv-4.5.2/include/opencv4
