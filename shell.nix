@@ -26,6 +26,7 @@ pkgs.mkShell {
       pkg-config
       tensorflow-lite
       clang_10
+      meson
       abseil-cpp
       flatbuffers
       libv4l

@@ -33,6 +33,9 @@ sources // {
         ];
       })
       (self: super: {
+        tflite-app = self.callPackage ../tflite-app.nix { };
+      })
+      (self: super: {
         tflite-pose = self.naersk.buildPackage {
           root = ../tflite-pose;
           buildInputs = [ self.openssl self.pkg-config ];

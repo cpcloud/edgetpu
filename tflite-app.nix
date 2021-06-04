@@ -14,14 +14,10 @@
 let
   pname = "tflite-app";
 in
-llvmPackages_latest.stdenv.mkDerivation {
+stdenv.mkDerivation {
   inherit pname;
   version = "1.0.0";
-  nativeBuildInputs = [
-    autoPatchelfHook
-    llvmPackages_latest.stdenv.cc.cc.lib
-    pkgconfig
-  ];
+  nativeBuildInputs = [ meson ];
   buildInputs = [
     abseil-cpp
     tensorflow-lite
@@ -46,28 +42,28 @@ llvmPackages_latest.stdenv.mkDerivation {
       utils.error-reporter
     ]
   );
-  dontConfigure = true;
-  buildPhase = ''
-    $CXX \
-      -o ${pname} \
-      -O3 \
-      -std=c++17 \
-      main.cpp \
-      -pthread \
-      $(pkg-config --cflags opencv4) \
-      $(pkg-config --libs opencv4) \
-      -lboost_program_options \
-      -ledgetpu \
-      -ledgetpu_basic_engine \
-      -ledgetpu_basic_engine_native \
-      -ltensorflow-lite \
-      -lrt \
-      -ldl
-  '';
-  installPhase = ''
-    mkdir -p "$out/bin"
-    install ${pname} $out/bin
-  '';
+  # dontConfigure = true;
+  # buildPhase = ''
+  #   $CXX \
+  #     -o ${pname} \
+  #     -O3 \
+  #     -std=c++17 \
+  #     main.cpp \
+  #     -pthread \
+  #     $(pkg-config --cflags opencv4) \
+  #     $(pkg-config --libs opencv4) \
+  #     -lboost_program_options \
+  #     -ledgetpu \
+  #     -ledgetpu_basic_engine \
+  #     -ledgetpu_basic_engine_native \
+  #     -ltensorflow-lite \
+  #     -lrt \
+  #     -ldl
+  # '';
+  # installPhase = ''
+  #   mkdir -p "$out/bin"
+  #   install ${pname} $out/bin
+  # '';
 
   src = ./app;
 }
