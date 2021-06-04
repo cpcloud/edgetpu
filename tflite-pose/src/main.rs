@@ -1,29 +1,32 @@
 #![feature(variant_count, never_type)]
 
-use anyhow::{anyhow,Context,Result};
-use opencv::imgproc::prelude::*;
-use opencv::core::prelude::*;
-use opencv::videoio::prelude::*;
-use std::time::{Instant,Duration};
-use std::path::PathBuf;
+use autocxx::include_cpp;
+
+include_cpp! {
+    #include "wrapper.hpp"
+    safety!(unsafe)
+    generate!("pose::Engine")
+}
+
+use anyhow::Result;
+use opencv::{
+    core::{Mat, Point2f, CV_8UC3},
+    imgproc::{resize, INTER_LINEAR},
+    prelude::*,
+    videoio::{VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, CAP_V4L2},
+};
+use std::{convert::TryFrom, path::PathBuf, time::Duration};
 use structopt::StructOpt;
 
-autocxx::include_cpp! {
-    #include "src/cpp/basic/basic_engine.h"
-    generate!("coral::BasicEngine")
-    safety!(unsafe_ffi)
-}
+const NANOS_PER_MILLI: f64 = 1_000_000.0;
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
-    #[error("foo")]
-    InputDimensions,
+    #[error("failed to convert inference milliseconds to duration")]
+    ConvertInferenceMillis(#[source] std::num::TryFromIntError),
 
-    #[error("bar")]
-    FirstDimensionSize,
-
-    #[error("baz")]
-    DepthSize,
+    #[error("failed to get typed data from OpenCV Mat")]
+    GetTypedData(#[source] opencv::Error),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -57,61 +60,78 @@ struct Keypoint {
 impl Default for Keypoint {
     fn default() -> Self {
         Self {
-            kind: Self::Nose,
+            kind: KeypointKind::Nose,
             point: Point2f::new(0.0_f32, 0.0_f32),
             score: 0.0,
         }
     }
 }
 
-const NUM_KEYPOINTS: usize = std::mem::variant_count::<KeypointKind>();
-
-type Keypoints = [Keypoint; NUM_KEYPOINTS];
-
 struct Pose {
-    keypoints: Keypoints,
+    keypoints: [Keypoint; std::mem::variant_count::<KeypointKind>()],
     score: f64,
 }
 
-type Poses = Vec<Pose>;
-
 struct Engine {
-    engine: ffi::coral::BasicEngine,
-    input_tensor_shape: Vec<i32>,
+    engine: cxx::UniquePtr<ffi::pose::Engine>,
+    input_tensor_shape: Vec<usize>,
     output_offsets: Vec<usize>,
     mirror: bool,
 }
 
 impl Engine {
-    fn detect_poses(&mut self, input: &Mat) -> Result<(Poses, Duration), Error> {
-        let outputs = self.engine.RunInference(input);
-        let inference_time = engine.get_inference_time();
-        let mut poses = vec![];
-
-        for (pose_i, keypoint) in keypoints.iter().enumerate() {
-            let mut keypoint_map = Default::default();
-
-            for (point_i, (column, row)) in keypoint.iter().enumerate() {
-                let mut kp = Keypoint {
-                    kind,
-                    (row, column),
-                    keypoint_scores[(pose_i, point_i)],
-                };
-
-                if self.mirror {
-                    kp.point.x = self.width() - kp.point.x
-                }
-
-                keypoint_map[point_i] = kp;
-            }
-            poses.push(Pose { keypoints: keypoint_map, score: pose_scores[pose_i] });
+    fn new(model_path: &str, mirror: bool) -> Self {
+        let engine = ffi::pose::Engine::make_unique(model_path);
+        let input_tensor_shape = engine
+            .get_input_tensor_shape()
+            .into_iter()
+            .map(|&value| value as usize)
+            .collect::<Vec<_>>();
+        let output_offsets = engine
+            .get_all_output_tensors_sizes()
+            .iter()
+            .copied()
+            .scan(0, |result, shape| {
+                *result += shape;
+                Some(*result)
+            })
+            .collect();
+        Self {
+            engine,
+            input_tensor_shape,
+            output_offsets,
+            mirror,
         }
+    }
 
-        Ok((poses, Duration::from_millis(u64::try_from(inference_time).map_err(Error::ConvertInferenceMillis)?)))
+    fn width(&self) -> usize {
+        self.input_tensor_shape[2]
+    }
+
+    fn depth(&self) -> usize {
+        self.input_tensor_shape[3]
+    }
+
+    fn detect_poses(&mut self, input: &Mat) -> Result<(Vec<Pose>, Duration), Error> {
+        let bytes = input
+            .data_typed::<u8>()
+            .map_err(Error::GetTypedData)?
+            .to_owned();
+
+        let sizes = self.engine.get_all_output_tensors_sizes();
+        let mut keypoints = vec![0; sizes[0]];
+        let mut keypoint_scores = vec![0; sizes[1]];
+        let mut pose_scores = vec![0; sizes[2]];
+        let nposes = self.engine.run_inference(bytes);
+        let inference_time = Duration::from_nanos(
+            (f64::from(self.engine.get_inference_time()) * NANOS_PER_MILLI) as u64,
+        );
+
+        Ok((vec![], inference_time))
     }
 }
 
-const EDGES: &[(Keypoint, Keypoint); 19] = [
+const EDGES: [(KeypointKind, KeypointKind); 19] = [
     (KeypointKind::Nose, KeypointKind::LeftEye),
     (KeypointKind::Nose, KeypointKind::RightEye),
     (KeypointKind::Nose, KeypointKind::LeftEar),
@@ -137,36 +157,51 @@ const EDGES: &[(Keypoint, Keypoint); 19] = [
 struct Opt {
     /// Path to a Tensorflow Lite model
     #[structopt(required = true)]
-    model: PathBuf,
+    model: String,
 
-    /// Path to a v4l2 compatible device
-    #[structopt(required = true)]
-    device: PathBuf,
+    /// /dev/videoDEVICE
+    #[structopt(short, long, default_value = "0")]
+    device: i32,
 
     /// Width
-    #[structopt(required = true)]
-    width: i32,
+    #[structopt(short, long, default_value = "1280")]
+    width: usize,
 
     /// Height
-    #[structopt(required = true)]
-    height: i32,
+    #[structopt(short = "-H", long, default_value = "720")]
+    height: u16,
+
+    /// Mirror
+    #[structopt(short, long)]
+    mirror: bool,
 
     /// Pose keypoint score threshold
-    #[structopt(default_value = "0.2")]
+    #[structopt(short, long, default_value = "0.2")]
     threshold: f64,
 }
 
 fn main() -> Result<!> {
-    let mut capture = cv::VideoCapture::new(0, cv::CAP_V4L2)?;
+    let opt = Opt::from_args();
+
+    let mut capture = VideoCapture::new(opt.device, CAP_V4L2)?;
     capture.set(CAP_PROP_FRAME_WIDTH, 1920.0);
     capture.set(CAP_PROP_FRAME_HEIGHT, 1080.0);
 
-    let mut in_frame = Mat::new_rows_cols(1920, 1080, CV_8UC3)?;
-    let mut out_frame = Mat::new_rows_cols(1280, 720, CV_8UC3)?;
+    let mut in_frame = Mat::zeros(1920, 1080, CV_8UC3)?.to_mat()?;
+    let mut out_frame = Mat::zeros(1280, 720, CV_8UC3)?.to_mat()?;
+
+    let engine = Engine::new(&opt.model, opt.mirror);
 
     loop {
         capture.read(&mut in_frame)?;
-        resize(&in_frame, &mut out_frame, out_frame.size(), 0, 0, INTER_LINEAR)?;
-        let (poses, _) = engine.detect_poses(out_frame)?;
+        resize(
+            &in_frame,
+            &mut out_frame,
+            out_frame.size()?,
+            0.0,
+            0.0,
+            INTER_LINEAR,
+        )?;
+        let (poses, _) = engine.detect_poses(&out_frame)?;
     }
 }

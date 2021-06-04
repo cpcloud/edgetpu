@@ -16,12 +16,14 @@ let
 in
 pkgs.mkShell {
   name = "edgetpu-shell";
-  nativeBuildInputs = with pkgs; [ pkgconfig ];
+  nativeBuildInputs = with pkgs; [ pkg-config ];
   buildInputs = guiPkgs ++ (
     with pkgs;
     [
       cargo-edit
       cargo-udeps
+      pkgconfig
+      pkg-config
       tensorflow-lite
       clang_10
       abseil-cpp
