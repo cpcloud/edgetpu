@@ -1,4 +1,5 @@
 { abseil-cpp
+, clang10Stdenv
 , cmake
 , flatbuffers
 , gobject-introspection
@@ -7,14 +8,13 @@
 , opencv4
 , pkg-config
 , glog
-, stdenv
 , tensorflow-lite
 , xtensor
 , ninja
 , cli11
 , libcoral
 }:
-stdenv.mkDerivation {
+clang10Stdenv.mkDerivation {
   pname = "tflite-app";
   version = "1.0.0";
 

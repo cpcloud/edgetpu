@@ -2,12 +2,13 @@ let
   sources = import ./nix;
   inherit (sources) pkgs;
 in
-pkgs.clang10Stdenv.mkDerivation {
+pkgs.mkShell {
   name = "edgetpu";
   buildInputs = with pkgs; [
     cargo-edit
     cargo-udeps
     clang_10
+    abseil-cpp
     pkg-config
     tensorflow-lite
     meson
@@ -15,7 +16,6 @@ pkgs.clang10Stdenv.mkDerivation {
     libcoral
     flatbuffers
     libv4l
-    boost
     xtensor
     opencv4
     v4l-utils

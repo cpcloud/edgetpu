@@ -1,167 +1,29 @@
 #![feature(variant_count, never_type)]
-
-use anyhow::Result;
-// use opencv::{
-//     core::{Mat, Point2f, CV_8UC3},
-//     imgproc::{resize, INTER_LINEAR},
-//     prelude::*,
-//     videoio::{VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, CAP_V4L2},
-// };
-// use std::{
-//     convert::TryFrom,
-//     path::{Path, PathBuf},
-//     time::Duration,
-// };
+use anyhow::{anyhow, Result};
+use opencv::{
+    core::{Mat, CV_8UC3},
+    imgproc::{resize, INTER_LINEAR},
+    prelude::*,
+    videoio::{VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, CAP_V4L2},
+};
+use std::{
+    convert::TryFrom,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use structopt::StructOpt;
 
-mod tflite_sys {
-    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-}
+// mod engine;
+// mod errors;
+// mod pose;
 // mod tflite;
-
-// const NANOS_PER_MILLI: f64 = 1_000_000.0;
-//
-// #[derive(Debug, thiserror::Error)]
-// enum Error {
-//     #[error("failed to convert inference milliseconds to duration")]
-//     ConvertInferenceMillis(#[source] std::num::TryFromIntError),
-//
-//     #[error("failed to get typed data from OpenCV Mat")]
-//     GetTypedData(#[source] opencv::Error),
-// }
-//
-// #[derive(Debug, Copy, Clone)]
-// enum KeypointKind {
-//     Nose,
-//     LeftEye,
-//     RightEye,
-//     LeftEar,
-//     RightEar,
-//     LeftShoulder,
-//     RightShoulder,
-//     LeftElbow,
-//     RightElbow,
-//     LeftWrist,
-//     RightWrist,
-//     LeftHip,
-//     RightHip,
-//     LeftKnee,
-//     RightKnee,
-//     LeftAnkle,
-//     RightAnkle,
-// }
-//
-// #[derive(Debug, Copy, Clone)]
-// struct Keypoint {
-//     kind: KeypointKind,
-//     point: Point2f,
-//     score: f64,
-// }
-//
-// impl Default for Keypoint {
-//     fn default() -> Self {
-//         Self {
-//             kind: KeypointKind::Nose,
-//             point: Point2f::new(0.0_f32, 0.0_f32),
-//             score: 0.0,
-//         }
-//     }
-// }
-//
-// struct Pose {
-//     keypoints: [Keypoint; std::mem::variant_count::<KeypointKind>()],
-//     score: f64,
-// }
-//
-// struct Engine {
-//     interpreter: tflite::Interpreter,
-//     input_tensor_shape: Vec<usize>,
-//     output_offsets: Vec<usize>,
-//     mirror: bool,
-// }
-//
-// impl Engine {
-//     fn new<P>(model_path: P) -> Result<Self, Error>
-//     where
-//         P: AsRef<Path>,
-//     {
-//         let interpreter = tflite::Interpreter::new(model_path)?;
-//         let input_tensor_shape = interpreter
-//             .get_input_tensor_shape()
-//             .into_iter()
-//             .map(|&value| value as usize)
-//             .collect::<Vec<_>>();
-//         let output_offsets = interpreter
-//             .get_all_output_tensors_sizes()
-//             .iter()
-//             .copied()
-//             .scan(0, |result, shape| {
-//                 *result += shape;
-//                 Some(*result)
-//             })
-//             .collect();
-//         Ok(Self {
-//             interpreter,
-//             input_tensor_shape,
-//             output_offsets,
-//             mirror,
-//         })
-//     }
-//
-//     fn width(&self) -> usize {
-//         self.input_tensor_shape[2]
-//     }
-//
-//     fn depth(&self) -> usize {
-//         self.input_tensor_shape[3]
-//     }
-//
-//     fn detect_poses(&mut self, input: &Mat) -> Result<(Vec<Pose>, Duration), Error> {
-//         let bytes = input
-//             .data_typed::<u8>()
-//             .map_err(Error::GetTypedData)?
-//             .to_owned();
-//
-//         let sizes = self.interpreter.get_all_output_tensors_sizes();
-//         let mut keypoints = vec![0; sizes[0]];
-//         let mut keypoint_scores = vec![0; sizes[1]];
-//         let mut pose_scores = vec![0; sizes[2]];
-//         let nposes = self.interpreter.run_inference(bytes);
-//         let inference_time = Duration::from_nanos(
-//             (f64::from(self.interpreter.get_inference_time()) * NANOS_PER_MILLI) as u64,
-//         );
-//
-//         Ok((vec![], inference_time))
-//     }
-// }
-//
-// const EDGES: [(KeypointKind, KeypointKind); 19] = [
-//     (KeypointKind::Nose, KeypointKind::LeftEye),
-//     (KeypointKind::Nose, KeypointKind::RightEye),
-//     (KeypointKind::Nose, KeypointKind::LeftEar),
-//     (KeypointKind::Nose, KeypointKind::RightEar),
-//     (KeypointKind::LeftEar, KeypointKind::LeftEye),
-//     (KeypointKind::RightEar, KeypointKind::RightEye),
-//     (KeypointKind::LeftEye, KeypointKind::RightEye),
-//     (KeypointKind::LeftShoulder, KeypointKind::RightShoulder),
-//     (KeypointKind::LeftShoulder, KeypointKind::LeftElbow),
-//     (KeypointKind::LeftShoulder, KeypointKind::LeftHip),
-//     (KeypointKind::RightShoulder, KeypointKind::RightElbow),
-//     (KeypointKind::RightShoulder, KeypointKind::RightHip),
-//     (KeypointKind::LeftElbow, KeypointKind::LeftWrist),
-//     (KeypointKind::RightElbow, KeypointKind::RightWrist),
-//     (KeypointKind::LeftHip, KeypointKind::RightHip),
-//     (KeypointKind::LeftHip, KeypointKind::LeftKnee),
-//     (KeypointKind::RightHip, KeypointKind::RightKnee),
-//     (KeypointKind::LeftKnee, KeypointKind::LeftAnkle),
-//     (KeypointKind::RightKnee, KeypointKind::RightAnkle),
-// ];
+mod tflite_sys;
 
 #[derive(structopt::StructOpt)]
 struct Opt {
     /// Path to a Tensorflow Lite model
-    #[structopt(required = true)]
-    model: String,
+    // #[structopt(required = true)]
+    // model: String,
 
     /// /dev/videoDEVICE
     #[structopt(short, long, default_value = "0")]
@@ -184,17 +46,48 @@ struct Opt {
     threshold: f64,
 }
 
+struct Devices {
+    devices: *mut tflite_sys::edgetpu_device,
+    len: usize,
+}
+
+impl Devices {
+    fn new() -> Result<Self> {
+        let mut len: usize = 0;
+        let devices = unsafe { tflite_sys::edgetpu_list_devices(&mut len) };
+        if devices.is_null() {
+            return Err(anyhow!("getting device list failed"));
+        }
+        Ok(Self { devices, len })
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl Drop for Devices {
+    fn drop(&mut self) {
+        unsafe {
+            tflite_sys::edgetpu_free_devices(self.devices);
+        }
+    }
+}
+
 fn main() -> Result<()> {
-    // let opt = Opt::from_args();
-    //
+    let opt = Opt::from_args();
+
+    let devices = Devices::new()?;
+    println!("num_devices: {}", devices.len());
+
     // let mut capture = VideoCapture::new(opt.device, CAP_V4L2)?;
-    // capture.set(CAP_PROP_FRAME_WIDTH, 1920.0);
-    // capture.set(CAP_PROP_FRAME_HEIGHT, 1080.0);
-    //
+    // capture.set(CAP_PROP_FRAME_WIDTH, 1920.0)?;
+    // capture.set(CAP_PROP_FRAME_HEIGHT, 1080.0)?;
+
     // let mut in_frame = Mat::zeros(1920, 1080, CV_8UC3)?.to_mat()?;
     // let mut out_frame = Mat::zeros(1280, 720, CV_8UC3)?.to_mat()?;
-    //
-    // let engine = Engine::new(&opt.model);
+
+    // let engine = engine::Engine::new(&opt.model, opt.mirror)?;
     //
     // loop {
     //     capture.read(&mut in_frame)?;
@@ -208,11 +101,5 @@ fn main() -> Result<()> {
     //     )?;
     //     // let (poses, _) = engine.detect_poses(&out_frame)?;
     // }
-
-    let mut num_devices: u64 = 0;
-    assert_ne!(
-        unsafe { tflite_sys::edgetpu_list_devices(&mut num_devices) },
-        std::ptr::null_mut()
-    );
     Ok(())
 }
