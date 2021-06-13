@@ -1,12 +1,17 @@
-project('tflite-app', 'c++')
-
-srcs = ['app/main.cpp']
+project(
+  'tflite-app',
+  'cpp',
+  version : '1.0.0',
+  default_options : [
+    'cpp_std=c++11',
+    'b_lto=true',
+  ],
+)
 
 boost_program_options = dependency('boost')
 edgetpu = dependency('edgetpu')
-edgetpu_basic_engine = dependency('edgetpu_basic_engine')
-edgetpu_basic_engine_native = dependency('edgetpu_basic_engine_native')
-tensorflow_lite = dependency('tensorflow_lite')
+coral = dependency('coral')
+tensorflow_lite = dependency('tensorflow-lite')
 flatbuffers = dependency('flatbuffers')
 xtensor = dependency('xtensor')
 opencv4 = dependency('opencv4')
@@ -14,12 +19,14 @@ opencv4 = dependency('opencv4')
 dependencies = [
   boost_program_options,
   edgetpu,
-  edgetpu_basic_engine,
-  edgetpu_basic_engine_native,
   tensorflow_lite,
   flatbuffers,
   xtensor,
   opencv4
 ]
 
-executable('tflite-app', srcs, dependencies : dependencies)
+executable(
+  'tflite-app',
+  'main.cpp',
+  dependencies : dependencies,
+)
