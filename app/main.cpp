@@ -1,5 +1,6 @@
 #include <array>
 #include <chrono>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -118,26 +119,31 @@ struct Keypoint {
   float score;
 };
 
-constexpr auto NOSE_VARIANT = Keypoint::Kind(NOSE);
-constexpr auto NOSE_INDEX = NOSE_VARIANT.index();
+#define DEFINE_KIND_CONSTS(kp)                                                 \
+  constexpr auto kp##_VARIANT = Keypoint::Kind((kp));                          \
+  constexpr auto kp##_INDEX = kp##_VARIANT.index()
 
-constexpr auto LEFT_EYE_VARIANT = Keypoint::Kind(LEFT_EYE);
-constexpr auto LEFT_EYE_INDEX = LEFT_EYE_VARIANT.index();
+DEFINE_KIND_CONSTS(NOSE);
+DEFINE_KIND_CONSTS(LEFT_EYE);
+DEFINE_KIND_CONSTS(RIGHT_EYE);
+DEFINE_KIND_CONSTS(LEFT_EAR);
+DEFINE_KIND_CONSTS(RIGHT_EAR);
+DEFINE_KIND_CONSTS(LEFT_SHOULDER);
+DEFINE_KIND_CONSTS(RIGHT_SHOULDER);
+DEFINE_KIND_CONSTS(LEFT_ELBOW);
+DEFINE_KIND_CONSTS(RIGHT_ELBOW);
+DEFINE_KIND_CONSTS(LEFT_WRIST);
+DEFINE_KIND_CONSTS(RIGHT_WRIST);
+DEFINE_KIND_CONSTS(LEFT_HIP);
+DEFINE_KIND_CONSTS(RIGHT_HIP);
+DEFINE_KIND_CONSTS(LEFT_KNEE);
+DEFINE_KIND_CONSTS(RIGHT_KNEE);
+DEFINE_KIND_CONSTS(LEFT_ANKLE);
+DEFINE_KIND_CONSTS(RIGHT_ANKLE);
 
-constexpr auto RIGHT_EYE_INDEX = Keypoint::Kind(RIGHT_EYE).index();
-constexpr auto LEFT_EAR_INDEX = Keypoint::Kind(LEFT_EAR).index();
-constexpr auto RIGHT_EAR_INDEX = Keypoint::Kind(RIGHT_EAR).index();
-constexpr auto LEFT_SHOULDER_INDEX = Keypoint::Kind(LEFT_SHOULDER).index();
-constexpr auto RIGHT_SHOULDER_INDEX = Keypoint::Kind(RIGHT_SHOULDER).index();
-constexpr auto LEFT_ELBOW_INDEX = Keypoint::Kind(LEFT_ELBOW).index();
-constexpr auto RIGHT_ELBOW_INDEX = Keypoint::Kind(RIGHT_ELBOW).index();
-constexpr auto LEFT_WRIST_INDEX = Keypoint::Kind(LEFT_WRIST).index();
-constexpr auto RIGHT_WRIST_INDEX = Keypoint::Kind(RIGHT_WRIST).index();
-constexpr auto LEFT_HIP_INDEX = Keypoint::Kind(LEFT_HIP).index();
-constexpr auto RIGHT_HIP_INDEX = Keypoint::Kind(RIGHT_HIP).index();
+#undef DEFINE_KIND_CONSTS
 
-static constexpr std::size_t NUM_KEYPOINTS =
-    std::variant_size_v<Keypoint::Kind>;
+constexpr std::size_t NUM_KEYPOINTS = std::variant_size_v<Keypoint::Kind>;
 
 struct Pose {
   std::array<Keypoint, NUM_KEYPOINTS> keypoints;
@@ -152,46 +158,35 @@ make_output_offsets(std::vector<std::size_t> output_sizes) {
   return result;
 }
 
-Keypoint::Kind position_to_keypoint_kind(std::size_t i) {
+#define CASE_POSITION_TO_KEYPOINT(kp)                                          \
+  case kp##_INDEX:                                                             \
+    return kp##_VARIANT
+
+constexpr Keypoint::Kind position_to_keypoint_kind(std::size_t i) {
   switch (i) {
-  case NOSE_INDEX:
-    return NOSE_VARIANT;
-  case LEFT_EYE_INDEX:
-    return LEFT_EYE_VARIANT;
-  case RIGHT_EYE_INDEX:
-    return RIGHT_EYE_VARIANT;
-  case 3:
-    return Keypoint::Kind(std::variant_alternative_t<RIGHT_EYE_INDEX, Keypoint::Kind>{});
-  case 4:
-    return Keypoint::Kind(std::variant_alternative_t<4, Keypoint::Kind>{});
-  case 5:
-    return Keypoint::Kind(std::variant_alternative_t<5, Keypoint::Kind>{});
-  case 6:
-    return Keypoint::Kind(std::variant_alternative_t<6, Keypoint::Kind>{});
-  case 7:
-    return Keypoint::Kind(std::variant_alternative_t<7, Keypoint::Kind>{});
-  case 8:
-    return Keypoint::Kind(std::variant_alternative_t<8, Keypoint::Kind>{});
-  case 9:
-    return Keypoint::Kind(std::variant_alternative_t<9, Keypoint::Kind>{});
-  case 10:
-    return Keypoint::Kind(std::variant_alternative_t<10, Keypoint::Kind>{});
-  case 11:
-    return Keypoint::Kind(std::variant_alternative_t<11, Keypoint::Kind>{});
-  case 12:
-    return Keypoint::Kind(std::variant_alternative_t<12, Keypoint::Kind>{});
-  case 13:
-    return Keypoint::Kind(std::variant_alternative_t<13, Keypoint::Kind>{});
-  case 14:
-    return Keypoint::Kind(std::variant_alternative_t<14, Keypoint::Kind>{});
-  case 15:
-    return Keypoint::Kind(std::variant_alternative_t<15, Keypoint::Kind>{});
-  case 16:
-    return Keypoint::Kind(std::variant_alternative_t<16, Keypoint::Kind>{});
+    CASE_POSITION_TO_KEYPOINT(NOSE);
+    CASE_POSITION_TO_KEYPOINT(LEFT_EYE);
+    CASE_POSITION_TO_KEYPOINT(RIGHT_EYE);
+    CASE_POSITION_TO_KEYPOINT(LEFT_EAR);
+    CASE_POSITION_TO_KEYPOINT(RIGHT_EAR);
+    CASE_POSITION_TO_KEYPOINT(LEFT_SHOULDER);
+    CASE_POSITION_TO_KEYPOINT(RIGHT_SHOULDER);
+    CASE_POSITION_TO_KEYPOINT(LEFT_ELBOW);
+    CASE_POSITION_TO_KEYPOINT(RIGHT_ELBOW);
+    CASE_POSITION_TO_KEYPOINT(LEFT_WRIST);
+    CASE_POSITION_TO_KEYPOINT(RIGHT_WRIST);
+    CASE_POSITION_TO_KEYPOINT(LEFT_HIP);
+    CASE_POSITION_TO_KEYPOINT(RIGHT_HIP);
+    CASE_POSITION_TO_KEYPOINT(LEFT_KNEE);
+    CASE_POSITION_TO_KEYPOINT(RIGHT_KNEE);
+    CASE_POSITION_TO_KEYPOINT(LEFT_ANKLE);
+    CASE_POSITION_TO_KEYPOINT(RIGHT_ANKLE);
   default:
-    throw std::exception();
+    throw std::logic_error("invalid variant index");
   }
 }
+
+#undef CASE_POSITION_TO_KEYPOINT
 
 class Engine {
 public:
@@ -230,7 +225,7 @@ public:
         outputs[1], std::vector<std::size_t>{
                         {outputs[1].size() / NUM_KEYPOINTS, NUM_KEYPOINTS}});
     auto pose_scores = outputs[2];
-    auto nposes = static_cast<std::size_t>(outputs[3][0]);
+    auto nposes = boost::numeric_cast<std::size_t>(outputs[3][0]);
 
     std::vector<Pose> poses;
     poses.reserve(nposes);
@@ -244,16 +239,16 @@ public:
                std::make_pair(xt::axis_slice_begin(*keypoint_ptr, 1), 0);
            point_ptr != xt::axis_slice_end(*keypoint_ptr, 1);
            ++point_ptr, ++point_i) {
-        Keypoint keypoint(position_to_keypoint_kind(point_i),
+        Keypoint keypoint{position_to_keypoint_kind(point_i),
                           cv::Point2f((*point_ptr)[1], (*point_ptr)[0]),
-                          keypoint_scores(pose_i, point_i));
+                          keypoint_scores(pose_i, point_i)};
         if (mirror_) {
           keypoint.point.x = width() - keypoint.point.x;
         }
 
         keypoint_map[point_i] = keypoint;
       }
-      poses.emplace_back(keypoint_map, pose_scores[pose_i]);
+      poses.push_back(Pose{keypoint_map, pose_scores[pose_i]});
     }
 
     return std::make_pair(poses, inf_time);
@@ -265,32 +260,31 @@ private:
   bool mirror_;
 }; // namespace pose
 
-static constexpr std::size_t NUM_EDGES = 19;
+constexpr std::size_t NUM_EDGES = 19;
 using KeypointEdge = std::pair<Keypoint::Kind, Keypoint::Kind>;
 
-static constexpr std::array<KeypointEdge, NUM_EDGES> EDGES = {
-    std::make_pair(Keypoint::Kind(NOSE), Keypoint::Kind(LeftEye())),
-    std::make_pair(Keypoint::Kind(NOSE), Keypoint::Kind(RightEye())),
-    std::make_pair(Keypoint::Kind(NOSE), Keypoint::Kind(LeftEar())),
-    std::make_pair(Keypoint::Kind(NOSE), Keypoint::Kind(RightEar())),
-    std::make_pair(Keypoint::Kind(LeftEar()), Keypoint::Kind(LeftEye())),
-    std::make_pair(Keypoint::Kind(RightEar()), Keypoint::Kind(RightEye())),
-    std::make_pair(Keypoint::Kind(LeftEye()), Keypoint::Kind(RightEye())),
-    std::make_pair(Keypoint::Kind(LeftShoulder()),
-                   Keypoint::Kind(RightShoulder())),
-    std::make_pair(Keypoint::Kind(LeftShoulder()), Keypoint::Kind(LeftElbow())),
-    std::make_pair(Keypoint::Kind(LeftShoulder()), Keypoint::Kind(LeftHip())),
-    std::make_pair(Keypoint::Kind(RightShoulder()),
-                   Keypoint::Kind(RightElbow())),
-    std::make_pair(Keypoint::Kind(RightShoulder()), Keypoint::Kind(RightHip())),
-    std::make_pair(Keypoint::Kind(LeftElbow()), Keypoint::Kind(LeftWrist())),
-    std::make_pair(Keypoint::Kind(RightElbow()), Keypoint::Kind(RightWrist())),
-    std::make_pair(Keypoint::Kind(LeftHip()), Keypoint::Kind(RightHip())),
-    std::make_pair(Keypoint::Kind(LeftHip()), Keypoint::Kind(LeftKnee())),
-    std::make_pair(Keypoint::Kind(RightHip()), Keypoint::Kind(RightKnee())),
-    std::make_pair(Keypoint::Kind(LeftKnee()), Keypoint::Kind(LeftAnkle())),
-    std::make_pair(Keypoint::Kind(RightKnee()), Keypoint::Kind(RightAnkle())),
+constexpr std::array<KeypointEdge, NUM_EDGES> EDGES = {
+    std::make_pair(NOSE_VARIANT, LEFT_EYE_VARIANT),
+    std::make_pair(NOSE_VARIANT, RIGHT_EYE_VARIANT),
+    std::make_pair(NOSE_VARIANT, LEFT_EAR_VARIANT),
+    std::make_pair(NOSE_VARIANT, RIGHT_EAR_VARIANT),
+    std::make_pair(LEFT_EAR_VARIANT, LEFT_EYE_VARIANT),
+    std::make_pair(RIGHT_EAR_VARIANT, RIGHT_EYE_VARIANT),
+    std::make_pair(LEFT_EYE_VARIANT, RIGHT_EYE_VARIANT),
+    std::make_pair(LEFT_SHOULDER_VARIANT, RIGHT_SHOULDER_VARIANT),
+    std::make_pair(LEFT_SHOULDER_VARIANT, LEFT_ELBOW_VARIANT),
+    std::make_pair(LEFT_SHOULDER_VARIANT, LEFT_HIP_VARIANT),
+    std::make_pair(RIGHT_SHOULDER_VARIANT, RIGHT_ELBOW_VARIANT),
+    std::make_pair(RIGHT_SHOULDER_VARIANT, RIGHT_HIP_VARIANT),
+    std::make_pair(LEFT_ELBOW_VARIANT, LEFT_WRIST_VARIANT),
+    std::make_pair(RIGHT_ELBOW_VARIANT, RIGHT_WRIST_VARIANT),
+    std::make_pair(LEFT_HIP_VARIANT, RIGHT_HIP_VARIANT),
+    std::make_pair(LEFT_HIP_VARIANT, LEFT_KNEE_VARIANT),
+    std::make_pair(RIGHT_HIP_VARIANT, RIGHT_KNEE_VARIANT),
+    std::make_pair(LEFT_KNEE_VARIANT, LEFT_ANKLE_VARIANT),
+    std::make_pair(RIGHT_KNEE_VARIANT, RIGHT_ANKLE_VARIANT),
 };
+
 } // namespace pose
 
 int main(int argc, const char *argv[]) {
@@ -308,10 +302,13 @@ int main(int argc, const char *argv[]) {
   po::store(po::parse_command_line(argc, argv, desc), vm);
   po::notify(vm);
 
+  if vm
+
   if (vm.count("help")) {
     std::cerr << desc << std::endl;
     return 1;
   }
+
   auto model_path = vm["model-path"].as<std::string>();
   auto threshold = vm["threshold"].as<float>();
   auto width = vm["width"].as<int32_t>();
