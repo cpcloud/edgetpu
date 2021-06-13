@@ -36,15 +36,15 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
-        "branch": "edgetpu",
+        "branch": "libedgetpu",
         "description": "Nix Packages collection",
         "homepage": null,
         "owner": "cpcloud",
         "repo": "nixpkgs",
-        "rev": "73a079e596c85d28817edb6fdfd50837b483c8b5",
-        "sha256": "1pfhrglgrnmcks5z9j0grs22r9c6ynnbjv5x4kds39mc33hxpygv",
+        "rev": "a773014275247a667bf4021b9ab0e32e06068743",
+        "sha256": "1bngmvhkcrzmp46hgl3a6my2ii3v3qwrmchhm2qda2k4rknkply6",
         "type": "tarball",
-        "url": "https://github.com/cpcloud/nixpkgs/archive/73a079e596c85d28817edb6fdfd50837b483c8b5.tar.gz",
+        "url": "https://github.com/cpcloud/nixpkgs/archive/a773014275247a667bf4021b9ab0e32e06068743.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
