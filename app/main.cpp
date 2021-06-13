@@ -1,5 +1,7 @@
 #include <array>
+#include <cassert>
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -8,23 +10,24 @@
 #include <variant>
 #include <vector>
 
-#include "src/cpp/basic/basic_engine.h"
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
+#include "absl/strings/str_format.h"
+#include "absl/time/time.h"
+
+#include "coral/tflite_utils.h"
 
 #include "xtensor/xadapt.hpp"
 #include "xtensor/xarray.hpp"
 #include "xtensor/xaxis_iterator.hpp"
 #include "xtensor/xaxis_slice_iterator.hpp"
 
-#include <boost/format.hpp>
-#include <boost/program_options/parsers.hpp>
-#include <boost/program_options/variables_map.hpp>
-
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/videoio.hpp"
 
-namespace po = boost::program_options;
-
+using Microseconds =
+    std::chrono::duration<float, std::chrono::microseconds::period>;
 using Milliseconds =
     std::chrono::duration<float, std::chrono::milliseconds::period>;
 using Seconds = std::chrono::duration<float, std::chrono::seconds::period>;
@@ -191,8 +194,10 @@ constexpr Keypoint::Kind position_to_keypoint_kind(std::size_t i) {
 class Engine {
 public:
   explicit Engine(std::string model_path, bool mirror = false)
-      : engine_(model_path),
-        input_tensor_shape_(engine_.get_input_tensor_shape()), mirror_(mirror) {
+      : engine_(coral::MakeEdgeTpuInterpreterOrDie(
+            *coral::LoadModelOrDie(model_path))),
+        input_tensor_shape_(engine_->inputs()),
+        output_tensor_shape_(engine_->outputs()), mirror_(mirror) {
     if (input_tensor_shape_.size() != 4) {
       throw InputDimensionsError(input_tensor_shape_.size());
     }
@@ -202,37 +207,48 @@ public:
     if (depth() != 3) {
       throw DepthSizeError(depth());
     }
+
+    CHECK_EQ(engine_->AllocateTensors(), kTfLiteOk);
   }
 
   std::size_t width() const { return input_tensor_shape_[2]; }
 
   std::size_t depth() const { return input_tensor_shape_[3]; }
 
-  std::pair<std::vector<Pose>, Milliseconds>
+  std::tuple<std::vector<Pose>, Microseconds, Milliseconds, Microseconds>
   detect_poses(const cv::Mat &raw_img) {
     const std::size_t nbytes = raw_img.step[0] * raw_img.rows;
-    auto outputs = engine_.RunInference(
-        std::vector<uint8_t>(raw_img.data, raw_img.data + nbytes));
 
-    Milliseconds inf_time(engine_.get_inference_time());
+    const auto start_copy = std::chrono::steady_clock::now();
+    std::copy(raw_img.data, raw_img.data + nbytes,
+              engine_->typed_input_tensor<uint8_t>(0));
+    const auto stop_copy = std::chrono::steady_clock::now();
 
-    auto keypoints = xt::adapt(
-        outputs[0],
+    const auto start_inference = std::chrono::steady_clock::now();
+    CHECK_EQ(engine_->Invoke(), kTfLiteOk);
+    const auto stop_inference = std::chrono::steady_clock::now();
+
+    const auto start_post_proc = std::chrono::steady_clock::now();
+    auto pose_keypoints = xt::adapt(
+        engine_->typed_output_tensor<float>(0),
         std::vector<std::size_t>{
-            {outputs[0].size() / NUM_KEYPOINTS / 2, NUM_KEYPOINTS, 2}});
+            {output_tensor_shape_[0] / NUM_KEYPOINTS / 2, NUM_KEYPOINTS, 2}});
 
     auto keypoint_scores = xt::adapt(
-        outputs[1], std::vector<std::size_t>{
-                        {outputs[1].size() / NUM_KEYPOINTS, NUM_KEYPOINTS}});
-    auto pose_scores = outputs[2];
-    auto nposes = boost::numeric_cast<std::size_t>(outputs[3][0]);
+        engine_->typed_output_tensor<float>(1),
+        std::vector<std::size_t>{
+            {output_tensor_shape_[1] / NUM_KEYPOINTS, NUM_KEYPOINTS}});
+    auto pose_scores = engine_->typed_output_tensor<float>(2);
+    auto nposes =
+        static_cast<std::size_t>(engine_->typed_output_tensor<float>(3)[0]);
 
     std::vector<Pose> poses;
     poses.reserve(nposes);
 
     for (auto [keypoint_ptr, pose_i] =
-             std::make_pair(xt::axis_begin(keypoints, 0), 0);
-         keypoint_ptr != xt::axis_end(keypoints, 0); ++keypoint_ptr, ++pose_i) {
+             std::make_pair(xt::axis_begin(pose_keypoints, 0), 0);
+         keypoint_ptr != xt::axis_end(pose_keypoints, 0);
+         ++keypoint_ptr, ++pose_i) {
       std::array<Keypoint, NUM_KEYPOINTS> keypoint_map;
 
       for (auto [point_ptr, point_i] =
@@ -250,13 +266,17 @@ public:
       }
       poses.push_back(Pose{keypoint_map, pose_scores[pose_i]});
     }
+    const auto stop_post_proc = std::chrono::steady_clock::now();
 
-    return std::make_pair(poses, inf_time);
+    return std::make_tuple(poses, stop_copy - start_copy,
+                           stop_inference - start_inference,
+                           stop_post_proc - start_post_proc);
   }
 
 private:
-  coral::BasicEngine engine_;
+  std::unique_ptr<tflite::Interpreter> engine_;
   const std::vector<int32_t> input_tensor_shape_;
+  const std::vector<int32_t> output_tensor_shape_;
   bool mirror_;
 }; // namespace pose
 
@@ -287,34 +307,49 @@ constexpr std::array<KeypointEdge, NUM_EDGES> EDGES = {
 
 } // namespace pose
 
-int main(int argc, const char *argv[]) {
-  po::options_description desc("Allowed options");
-  desc.add_options()("help,h", "Test a model with coral::BasicEngine")(
-      "model-path,m", po::value<std::string>(),
-      "path to a Tensorflow Lite model")("device-path,d",
-                                         po::value<std::string>(),
-                                         "path to a v4l2 compatible device")(
-      "threshold,t", po::value<float>()->default_value(0.2f),
-      "pose keypoint score threshold")("width,w", po::value<int32_t>(),
-                                       "output frame width")(
-      "height,H", po::value<int32_t>(), "output frame height");
-  po::variables_map vm;
-  po::store(po::parse_command_line(argc, argv, desc), vm);
-  po::notify(vm);
+struct Path {
+  std::string path;
+};
 
-  if vm
+std::string AbslUnparseFlag(Path p) { return absl::UnparseFlag(p.path); }
 
-  if (vm.count("help")) {
-    std::cerr << desc << std::endl;
-    return 1;
+bool AbslParseFlag(absl::string_view text, Path *path,
+                   std::string *error) {
+  if (!absl::ParseFlag(text, &path->path, error)) {
+    return false;
   }
 
-  auto model_path = vm["model-path"].as<std::string>();
-  auto threshold = vm["threshold"].as<float>();
-  auto width = vm["width"].as<int32_t>();
-  auto height = vm["height"].as<int32_t>();
+  if (path->path.empty()) {
+    *error = "provided path is empty";
+    return false;
+  }
 
-  cv::VideoCapture capture(vm["device-path"].as<std::string>(), cv::CAP_V4L2);
+  if (!std::filesystem::exists(std::filesystem::path(path->path))) {
+    *error = "path provided does not exist";
+    return false;
+  }
+
+  return true;
+}
+
+ABSL_FLAG(Path, model_path, Path{},
+          "Path to a Tensorflow Lite model");
+ABSL_FLAG(Path, device_path, Path{"/dev/video0"},
+          "Path to a v4l2 supported device");
+ABSL_FLAG(float, threshold, 0.2f, "Pose score threshold");
+ABSL_FLAG(int32_t, width, -1.0, "Output frame width");
+ABSL_FLAG(int32_t, height, -1.0, "Output frame height");
+
+int main(int argc, char **argv) {
+  absl::ParseCommandLine(argc, argv);
+
+  auto model_path = absl::GetFlag(FLAGS_model_path);
+  auto threshold = absl::GetFlag(FLAGS_threshold);
+  auto width = absl::GetFlag(FLAGS_width);
+  auto height = absl::GetFlag(FLAGS_height);
+  auto device_path = absl::GetFlag(FLAGS_device_path);
+
+  cv::VideoCapture capture(device_path.path, cv::CAP_V4L2);
   capture.set(cv::CAP_PROP_FRAME_WIDTH, 1280.0);
   capture.set(cv::CAP_PROP_FRAME_HEIGHT, 720.0);
 
@@ -327,7 +362,7 @@ int main(int argc, const char *argv[]) {
   Seconds resize_secs(0.0f);
   std::size_t nframes = 0;
 
-  pose::Engine engine(model_path);
+  pose::Engine engine(model_path.path);
 
   while (true) {
     auto start_frame = std::chrono::steady_clock::now();
@@ -343,7 +378,8 @@ int main(int argc, const char *argv[]) {
     auto stop_resize = std::chrono::steady_clock::now();
     resize_secs += stop_resize - start_resize;
 
-    auto [poses, inf_millis] = engine.detect_poses(out_frame);
+    auto [poses, copy_millis, inf_millis, post_proc_millis] =
+        engine.detect_poses(out_frame);
     inf_secs += inf_millis;
     auto true_secs = cam_secs + resize_secs + inf_secs;
 
@@ -368,26 +404,26 @@ int main(int argc, const char *argv[]) {
     }
 
     auto model_fps_text =
-        boost::format("Model FPS: %.1f") % (nframes / inf_secs.count());
-    cv::putText(out_frame, model_fps_text.str(), cv::Point(width / 2, 15),
+        absl::StrFormat("Model FPS: %.1f", nframes / inf_secs.count());
+    cv::putText(out_frame, model_fps_text, cv::Point(width / 2, 15),
                 cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
                 cv::LINE_AA);
 
     auto cam_fps_text =
-        boost::format("Cam FPS: %.1f") % (nframes / cam_secs.count());
-    cv::putText(out_frame, cam_fps_text.str(), cv::Point(width / 2, 30),
+        absl::StrFormat("Cam FPS: %.1f", nframes / cam_secs.count());
+    cv::putText(out_frame, cam_fps_text, cv::Point(width / 2, 30),
                 cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
                 cv::LINE_AA);
 
     auto resize_fps_text =
-        boost::format("Resize FPS: %.1f") % (nframes / resize_secs.count());
-    cv::putText(out_frame, resize_fps_text.str(), cv::Point(width / 2, 45),
+        absl::StrFormat("Resize FPS: %.1f", nframes / resize_secs.count());
+    cv::putText(out_frame, resize_fps_text, cv::Point(width / 2, 45),
                 cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
                 cv::LINE_AA);
 
     auto true_fps_text =
-        boost::format("True FPS: %.1f") % (nframes / true_secs.count());
-    cv::putText(out_frame, true_fps_text.str(), cv::Point(width / 2, 60),
+        absl::StrFormat("True FPS: %.1f", nframes / true_secs.count());
+    cv::putText(out_frame, true_fps_text, cv::Point(width / 2, 60),
                 cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
                 cv::LINE_AA);
 

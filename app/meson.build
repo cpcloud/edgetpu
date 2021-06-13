@@ -3,22 +3,28 @@ project(
   'cpp',
   version : '1.0.0',
   default_options : [
-    'cpp_std=c++11',
-    'b_lto=true',
+    'cpp_std=c++17',
   ],
 )
 
-boost_program_options = dependency('boost')
-edgetpu = dependency('edgetpu')
+absl_flags = dependency('absl_flags')
+absl_flags_parse = dependency('absl_flags_parse')
+absl_strings = dependency('absl_strings')
 coral = dependency('coral')
+glog = dependency('glog')
+edgetpu = dependency('edgetpu')
 tensorflow_lite = dependency('tensorflow-lite')
 flatbuffers = dependency('flatbuffers')
 xtensor = dependency('xtensor')
 opencv4 = dependency('opencv4')
 
 dependencies = [
-  boost_program_options,
+  absl_flags,
+  absl_flags_parse,
+  absl_strings,
+  coral,
   edgetpu,
+  glog,
   tensorflow_lite,
   flatbuffers,
   xtensor,
@@ -29,4 +35,5 @@ executable(
   'tflite-app',
   'main.cpp',
   dependencies : dependencies,
+  install : true,
 )

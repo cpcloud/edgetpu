@@ -10,7 +10,8 @@ pkgs.mkShell {
     pkg-config
     tensorflow-lite
     meson
-    # abseil-cpp
+    libedgetpu
+    libcoral
     flatbuffers
     libv4l
     boost

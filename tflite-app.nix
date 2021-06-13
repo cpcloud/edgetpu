@@ -1,5 +1,4 @@
 { abseil-cpp
-, boost
 , cmake
 , flatbuffers
 , gobject-introspection
@@ -7,11 +6,13 @@
 , meson
 , opencv4
 , pkg-config
+, glog
 , stdenv
 , tensorflow-lite
 , xtensor
 , ninja
 , cli11
+, libcoral
 }:
 stdenv.mkDerivation {
   pname = "tflite-app";
@@ -26,11 +27,12 @@ stdenv.mkDerivation {
 
   buildInputs = [
     libedgetpu
+    libcoral
     abseil-cpp
     cli11
+    glog
     tensorflow-lite
     flatbuffers
-    boost
     xtensor
     opencv4
   ];

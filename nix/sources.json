@@ -36,15 +36,15 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
-        "branch": "libedgetpu",
+        "branch": "libcoral",
         "description": "Nix Packages collection",
         "homepage": null,
         "owner": "cpcloud",
         "repo": "nixpkgs",
-        "rev": "a773014275247a667bf4021b9ab0e32e06068743",
-        "sha256": "1bngmvhkcrzmp46hgl3a6my2ii3v3qwrmchhm2qda2k4rknkply6",
+        "rev": "673a3d0ef1abdef683adf7c1d241047179cb2e64",
+        "sha256": "0gs6w3pssdhnabwcjnjf9n6dnz73qwhp3f4pw34za7m9dsvc1z3d",
         "type": "tarball",
-        "url": "https://github.com/cpcloud/nixpkgs/archive/a773014275247a667bf4021b9ab0e32e06068743.tar.gz",
+        "url": "https://github.com/cpcloud/nixpkgs/archive/673a3d0ef1abdef683adf7c1d241047179cb2e64.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
