@@ -14,7 +14,7 @@
 , cli11
 }:
 stdenv.mkDerivation {
-  inherit "tflite-app";
+  pname = "tflite-app";
   version = "1.0.0";
 
   nativeBuildInputs = [
