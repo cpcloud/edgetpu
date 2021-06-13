@@ -14,5 +14,6 @@ thiserror = "1"
 ndarray = "0.15.2"
 
 [build-dependencies]
+anyhow = "1"
 bindgen = "0.58.1"
 pkg-config = "0.3.19"

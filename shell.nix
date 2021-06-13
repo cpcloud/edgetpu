@@ -2,11 +2,12 @@ let
   sources = import ./nix;
   inherit (sources) pkgs;
 in
-pkgs.mkShell {
+pkgs.clang10Stdenv.mkDerivation {
   name = "edgetpu";
   buildInputs = with pkgs; [
     cargo-edit
     cargo-udeps
+    clang_10
     pkg-config
     tensorflow-lite
     meson
@@ -20,4 +21,8 @@ pkgs.mkShell {
     v4l-utils
     rustToolchain
   ];
+
+  LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
+  CLANG_PATH = "${pkgs.clang_10}/bin/clang";
+  PROTOC = "${pkgs.protobuf}/bin/protoc";
 }
