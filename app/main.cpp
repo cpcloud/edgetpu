@@ -353,7 +353,7 @@ int main(int argc, char **argv) {
   capture.set(cv::CAP_PROP_FRAME_WIDTH, 1280.0);
   capture.set(cv::CAP_PROP_FRAME_HEIGHT, 720.0);
 
-  cv::Mat in_frame, out_frame, stream_out_frame;
+  cv::Mat in_frame, out_frame;
 
   cv::Size frame_dims{{width, height}};
 
@@ -426,8 +426,6 @@ int main(int argc, char **argv) {
     cv::putText(out_frame, true_fps_text, cv::Point(width / 2, 60),
                 cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(38, 0, 255), 1,
                 cv::LINE_AA);
-
-    cv::resize(out_frame, stream_out_frame, in_frame.size());
   }
 
   return 0;
