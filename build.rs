@@ -14,7 +14,7 @@ fn main() -> Result<()> {
     // https://stackoverflow.com/questions/28060294/linking-to-a-c-library-that-has-extern-c-functions
     // Seems like using extern "C" functions isn't totally transparent.
     //
-    // Is adding an attribute to all TfLite.* APIs with `#[link("tensorflow-lite")]` the real solution.
+    // Is adding an attribute to all TfLite.* APIs with `#[link(name = "tensorflow-lite")]` the real solution?
     println!("cargo:rustc-flags=-l static=stdc++");
 
     let mut bindings = bindgen::Builder::default()
