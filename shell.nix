@@ -20,6 +20,13 @@ pkgs.mkShell {
     rustToolchain
     tensorflow-lite
     v4l-utils
+    (python3.withPackages(p: with p; [
+      click
+      ipdb
+      ipython
+      black
+      mypy
+    ]))
   ]);
 
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
