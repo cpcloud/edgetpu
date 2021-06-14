@@ -49,4 +49,10 @@ pub(crate) enum Error {
 
     #[error("failed to convert keypoint variant to usize: {0:?}")]
     KeypointVariantToUSize(KeypointKind),
+
+    #[error("failed to create edgetpu delegate: got null pointer")]
+    CreateEdgeTpuDelegate,
+
+    #[error("failed to crate posenet decoder delegate")]
+    CreatePosenetDecoderDelegate,
 }
