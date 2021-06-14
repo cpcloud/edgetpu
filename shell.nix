@@ -1,9 +1,11 @@
 let
   pkgs = import ./nix;
+  sources = import ./nix/sources.nix;
+  niv = (import sources.niv { }).niv;
 in
 pkgs.mkShell {
   name = "edgetpu";
-  buildInputs = with pkgs; [
+  buildInputs = [ niv ] ++ (with pkgs; [
     cargo-edit
     cargo-udeps
     clang_10
@@ -19,7 +21,7 @@ pkgs.mkShell {
     opencv4
     v4l-utils
     rustToolchain
-  ];
+  ]);
 
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
   CLANG_PATH = "${pkgs.clang_10}/bin/clang";
