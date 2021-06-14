@@ -11,8 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) struct Engine {
-    interpreter: tflite::Interpreter,
+pub(crate) struct Engine<'i, 'd, 'm> {
+    interpreter: tflite::Interpreter<'i, 'd, 'm>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -22,7 +22,7 @@ pub(crate) struct Timing {
     pub(crate) post_proc: Duration,
 }
 
-impl Engine {
+impl<'i, 'd, 'm> Engine<'i, 'd, 'm> {
     pub(crate) fn new<P>(model_path: P) -> Result<Self, Error>
     where
         P: AsRef<Path>,
