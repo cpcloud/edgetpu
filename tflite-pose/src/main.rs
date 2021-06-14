@@ -133,7 +133,12 @@ struct Opt {
 
     #[structopt(long)]
     frame_height: Option<u16>,
+
+    #[structopt(short, long, default_value = "1")]
+    wait_key_ms: i32,
 }
+
+const Q_KEY: i32 = b'q' as i32;
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
@@ -165,7 +170,7 @@ fn main() -> Result<()> {
 
     let mut frame_duration = Default::default();
 
-    while wait_key(1 /* ms */)? != i32::from(b'q') {
+    while wait_key(opt.wait_key_ms)? != Q_KEY {
         let frame_start = Instant::now();
         capture.read(&mut in_frame)?;
         frame_duration += frame_start.elapsed();

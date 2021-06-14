@@ -101,8 +101,7 @@ impl<'a> Tensor<'a> {
 
     pub(crate) fn byte_size(&self) -> usize {
         // # SAFETY: self.tensor is guaranteed to be valid
-        usize::try_from(unsafe { tflite_sys::TfLiteTensorByteSize(self.tensor as _) })
-            .expect("failed to convert byte_size i32 to usize")
+        unsafe { tflite_sys::TfLiteTensorByteSize(self.tensor as _) }
     }
 
     pub(crate) fn copy_from_buffer(&mut self, buf: &[u8]) -> Result<(), Error> {
