@@ -1,9 +1,10 @@
 #![feature(variant_count)]
+
 use anyhow::{Context, Result};
 use num_traits::cast::ToPrimitive;
 use opencv::{
-    core::{Mat, Point2i, Scalar, CV_8UC3},
-    imgproc::{resize, FONT_HERSHEY_SIMPLEX, INTER_LINEAR, LINE_8, LINE_AA},
+    core::{Mat, CV_8UC3},
+    imgproc::{resize, INTER_LINEAR},
     prelude::*,
     videoio::{VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, CAP_V4L2},
 };
@@ -30,6 +31,11 @@ fn draw_poses(
     nframes: usize,
     width: u16,
 ) -> Result<()> {
+    use opencv::{
+        core::{Point2i, Scalar},
+        imgproc::{FONT_HERSHEY_SIMPLEX, LINE_8, LINE_AA},
+    };
+
     for pose in poses.into_iter() {
         let mut xys = [None; pose::NUM_KEYPOINTS];
 
@@ -100,9 +106,13 @@ fn draw_poses(
 fn draw_poses(
     _poses: Vec<pose::Pose>,
     _threshold: f32,
-    timing: engine::Timing,
+    _timing: engine::Timing,
     _out_frame: &mut Mat,
-) {
+    _frame_duration: Duration,
+    _nframes: usize,
+    _width: u16,
+) -> Result<()> {
+    Ok(())
 }
 
 #[derive(structopt::StructOpt)]
@@ -142,13 +152,15 @@ struct Opt {
 
 #[cfg(not(target_arch = "aarch64"))]
 fn wait_q(delay_ms: i32) -> Result<bool> {
-    const Q_KEY: u8 = b'q';
-    Ok(opencv::highgui::wait_key(delay_ms)? != i32::from(Q_KEY))
-}
-
-#[cfg(target_arch = "aarch64")]
-fn wait_q(delay_ms: i32, key: u8) -> Result<bool> {
-    Ok(true)
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        const Q_KEY: u8 = b'q';
+        Ok(opencv::highgui::wait_key(delay_ms)? != i32::from(Q_KEY))
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        Ok(true)
+    }
 }
 
 fn main() -> Result<()> {
@@ -208,6 +220,7 @@ fn main() -> Result<()> {
             nframes,
             opt.width,
         )?;
+        #[cfg(not(target_arch = "aarch64"))]
         opencv::highgui::imshow("poses", &out_frame)?;
     }
     Ok(())
