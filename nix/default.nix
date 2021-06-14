@@ -4,7 +4,6 @@ in
 import sources.nixpkgs {
   overlays = [
     (import ./opencv4.nix)
-    (import ./xtensor.nix)
     (import ./v4l-utils.nix)
     (self: super: {
       naersk = self.callPackage sources.naersk { };
@@ -30,9 +29,6 @@ import sources.nixpkgs {
         "rust-std"
         "rust-src"
       ];
-    })
-    (self: super: {
-      tflite-app = self.callPackage ../tflite-app.nix { };
     })
     (self: super: {
       tflite-pose = self.naersk.buildPackage {
