@@ -118,6 +118,7 @@ pub(crate) struct Interpreter<'i, 'd, 'm> {
     options: *mut tflite_sys::TfLiteInterpreterOptions,
     _devices: Devices<'d>,
     _model: Model<'m>,
+    _delegates: Vec<Delegate<'d>>,
     _p: PhantomData<&'i ()>,
 }
 
@@ -148,7 +149,7 @@ impl<'i, 'd, 'm> Interpreter<'i, 'd, 'm> {
     where
         P: AsRef<Path>,
     {
-        let (interpreter, options, devices, model) = unsafe {
+        let (interpreter, options, devices, model, delegates) = unsafe {
             // # SAFETY: we check nullness
             let options = check_null_mut(tflite_sys::TfLiteInterpreterOptionsCreate(), || {
                 Error::CreateOptions
@@ -171,31 +172,33 @@ impl<'i, 'd, 'm> Interpreter<'i, 'd, 'm> {
                 return Err(Error::GetEdgeTpuDevice);
             }
 
+            let mut delegates = Vec::with_capacity(devices.len());
             for device in devices.iter() {
-                let dev = device?;
-                let mut edgetpu_delegate = dev.delegate()?;
+                let mut edgetpu_delegate = device?.delegate()?;
                 tflite_sys::TfLiteInterpreterOptionsAddDelegate(
                     options,
                     edgetpu_delegate.as_mut_ptr(),
                 );
+                delegates.push(edgetpu_delegate);
             }
 
             // SAFETY: all inputs are valid
             tflite_sys::TfLiteInterpreterOptionsSetEnableDelegateFallback(options, false);
 
-            // SAFETY: checkk nullness of interpreter
+            // SAFETY: check nullness of interpreter
             let mut model = Model::new(path)?;
             let interpreter = check_null_mut(
                 tflite_sys::TfLiteInterpreterCreate(model.as_mut_ptr(), options),
                 || Error::CreateInterpreter,
             )?;
-            (interpreter, options, devices, model)
+            (interpreter, options, devices, model, delegates)
         };
         Ok(Self {
             interpreter,
             options,
             _devices: devices,
             _model: model,
+            _delegates: delegates,
             _p: PhantomData,
         })
     }

@@ -23,7 +23,7 @@ impl<'a> Device<'a> {
         })
     }
 
-    pub(crate) fn delegate(&'a self) -> Result<Delegate<'a>, Error> {
+    pub(crate) fn delegate<'b>(&'a self) -> Result<Delegate<'b>, Error> {
         let delegate = unsafe {
             tflite_sys::edgetpu_create_delegate(
                 (*self.device).type_,
