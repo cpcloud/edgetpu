@@ -1,9 +1,8 @@
 #![feature(variant_count)]
-use anyhow::Result;
+use anyhow::{Context, Result};
 use num_traits::cast::ToPrimitive;
 use opencv::{
     core::{Mat, Point2i, Scalar, CV_8UC3},
-    highgui::wait_key,
     imgproc::{resize, FONT_HERSHEY_SIMPLEX, INTER_LINEAR, LINE_8, LINE_AA},
     prelude::*,
     videoio::{VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, CAP_V4L2},
@@ -141,7 +140,16 @@ struct Opt {
     wait_key_ms: i32,
 }
 
-const Q_KEY: u8 = b'q';
+#[cfg(not(target_arch = "aarch64"))]
+fn wait_q(delay_ms: i32) -> Result<bool> {
+    const Q_KEY: u8 = b'q';
+    Ok(opencv::highgui::wait_key(delay_ms)? != i32::from(Q_KEY))
+}
+
+#[cfg(target_arch = "aarch64")]
+fn wait_q(delay_ms: i32, key: u8) -> Result<bool> {
+    Ok(true)
+}
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
@@ -175,7 +183,7 @@ fn main() -> Result<()> {
     let mut nframes = 0;
     let mut frame_duration = Default::default();
 
-    while wait_key(opt.wait_key_ms)? != i32::from(Q_KEY) {
+    while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")? {
         let frame_start = Instant::now();
         capture.read(&mut in_frame)?;
         frame_duration += frame_start.elapsed();
@@ -190,7 +198,6 @@ fn main() -> Result<()> {
             INTER_LINEAR,
         )?;
 
-        opencv::highgui::imshow("poses", &out_frame)?;
         let poses = engine.detect_poses(&out_frame)?;
         draw_poses(
             poses,
@@ -201,6 +208,7 @@ fn main() -> Result<()> {
             nframes,
             opt.width,
         )?;
+        opencv::highgui::imshow("poses", &out_frame)?;
     }
     Ok(())
 }
