@@ -92,7 +92,7 @@ impl<'a> Tensor<'a> {
         // # SAFETY: self.tensor is guaranteed to be valid
         usize::try_from(unsafe {
             tflite_sys::TfLiteTensorDim(
-                self.tensor as *const _,
+                self.tensor as _,
                 i32::try_from(dim_index).expect("failed to convert dim_index usize to i32"),
             )
         })
