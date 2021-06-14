@@ -1,13 +1,14 @@
-#![feature(variant_count, never_type)]
+#![feature(variant_count)]
 use anyhow::Result;
+use num_traits::cast::ToPrimitive;
 use opencv::{
     core::{Mat, Point2f, Point2i, Scalar, CV_8UC3},
+    highgui::wait_key,
     imgproc::{resize, INTER_LINEAR},
     prelude::*,
     videoio::{VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, CAP_V4L2},
 };
-
-use std::path::PathBuf;
+use std::{convert::TryFrom, path::PathBuf};
 use structopt::StructOpt;
 
 mod edgetpu;
@@ -115,66 +116,73 @@ struct Opt {
     #[structopt(short, long, default_value = "0")]
     device: i32,
 
-    /// Input image width
+    /// Width of the model image
     #[structopt(short, long, default_value = "1281")]
     width: u16,
 
-    /// Input image height
-    #[structopt(short = "-H", long, default_value = "721")]
-    height: u16,
-
-    /// Width of the model image
-    #[structopt(short, long, default_value = "1281")]
-    model_width: u16,
-
     /// Height of the model image
     #[structopt(short = "-H", long, default_value = "721")]
-    model_height: u16,
+    height: u16,
 
     /// Pose keypoint score threshold
     #[structopt(short, long, default_value = "0.2")]
     threshold: f32,
+
+    #[structopt(long)]
+    frame_width: Option<u16>,
+
+    #[structopt(long)]
+    frame_height: Option<u16>,
 }
 
-fn main() -> Result<!> {
+fn main() -> Result<()> {
     let opt = Opt::from_args();
     let threshold = opt.threshold;
 
     let mut capture = VideoCapture::new(opt.device, CAP_V4L2)?;
-    capture.set(CAP_PROP_FRAME_WIDTH, opt.width.into())?;
-    capture.set(CAP_PROP_FRAME_HEIGHT, opt.height.into())?;
+    if let Some(width) = opt.frame_width.map(f64::from) {
+        capture.set(CAP_PROP_FRAME_WIDTH, width)?;
+    }
+    if let Some(height) = opt.frame_height.map(f64::from) {
+        capture.set(CAP_PROP_FRAME_HEIGHT, height)?;
+    }
+    let width = capture.get(CAP_PROP_FRAME_WIDTH)?;
+    let height = capture.get(CAP_PROP_FRAME_HEIGHT)?;
+    println!("width: {}, height: {}", width, height);
 
-    let mut in_frame = Mat::zeros(opt.width.into(), opt.height.into(), CV_8UC3)?.to_mat()?;
-    let mut out_frame =
-        Mat::zeros(opt.model_width.into(), opt.model_height.into(), CV_8UC3)?.to_mat()?;
+    let mut in_frame =
+        Mat::zeros(height.to_i32().unwrap(), width.to_i32().unwrap(), CV_8UC3)?.to_mat()?;
+    let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)?.to_mat()?;
     let out_frame_size = out_frame.size()?;
 
     let mut engine = engine::Engine::new(opt.model)?;
 
     let mut nframes = 0;
 
-    loop {
-        capture.read(&mut in_frame)?;
-        nframes += 1;
-
-        resize(
-            &in_frame,
-            &mut out_frame,
-            out_frame_size,
-            0.0,
-            0.0,
-            INTER_LINEAR,
-        )?;
-
-        let (poses, timings) = engine.detect_poses(&out_frame)?;
-
-        draw_poses(
-            poses,
-            threshold,
-            timings,
-            &mut out_frame,
-            nframes,
-            opt.width,
-        )?;
-    }
+    // while wait_key(1 [> ms <])? != i32::from(b'q') {
+    //     capture.read(&mut in_frame)?;
+    //     nframes += 1;
+    //
+    //     // resize(
+    //     //     &in_frame,
+    //     //     &mut out_frame,
+    //     //     out_frame_size,
+    //     //     0.0,
+    //     //     0.0,
+    //     //     INTER_LINEAR,
+    //     // )?;
+    //
+    //     opencv::highgui::imshow("poses", &in_frame)?;
+    //     // let (poses, timings) = engine.detect_poses(&out_frame)?;
+    //     //
+    //     // draw_poses(
+    //     //     poses,
+    //     //     threshold,
+    //     //     timings,
+    //     //     &mut out_frame,
+    //     //     nframes,
+    //     //     opt.width,
+    //     // )?;
+    // }
+    Ok(())
 }

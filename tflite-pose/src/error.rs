@@ -55,4 +55,7 @@ pub(crate) enum Error {
 
     #[error("failed to crate posenet decoder delegate")]
     CreatePosenetDecoderDelegate,
+
+    #[error("failed to get edgetpu device: no devices found")]
+    GetEdgeTpuDevice,
 }

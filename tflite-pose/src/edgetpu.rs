@@ -65,6 +65,10 @@ impl<'a> Devices<'a> {
         self.len
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     pub(crate) fn iter(&'a self) -> impl Iterator<Item = Result<Device<'a>, Error>> {
         // SAFETY: self.devices + 0..self.len() is guaranteed to be non-null
         let devices = self.devices;

@@ -1,4 +1,8 @@
-use crate::{edgetpu::Devices, error::Error, tflite_sys};
+use crate::{
+    edgetpu::{Delegate, Devices},
+    error::Error,
+    tflite_sys,
+};
 use std::{
     convert::TryFrom, ffi::CString, marker::PhantomData, os::unix::ffi::OsStrExt, path::Path,
 };
@@ -163,6 +167,10 @@ impl<'i, 'd, 'm> Interpreter<'i, 'd, 'm> {
             tflite_sys::TfLiteInterpreterOptionsAddDelegate(options, posenet_delegate);
 
             let devices = Devices::new()?;
+            if devices.is_empty() {
+                return Err(Error::GetEdgeTpuDevice);
+            }
+
             for device in devices.iter() {
                 let dev = device?;
                 let mut edgetpu_delegate = dev.delegate()?;
