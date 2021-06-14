@@ -1,5 +1,5 @@
 use crate::{error::Error, tflite_sys};
-use std::{ffi::CString, marker::PhantomData};
+use std::marker::PhantomData;
 
 pub(crate) struct Devices<'a> {
     devices: *mut tflite_sys::edgetpu_device,
@@ -23,9 +23,24 @@ impl<'a> Device<'a> {
         })
     }
 
-    pub(crate) fn r#type(&self) -> tflite_sys::edgetpu_device_type {
-        // SAFETY: self.device is guaranteed to be non-null
-        unsafe { *self.device }.type_
+    pub(crate) fn delegate(&'a self) -> Result<Delegate<'a>, Error> {
+        let delegate = unsafe {
+            tflite_sys::edgetpu_create_delegate(
+                (*self.device).type_,
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+            )
+        };
+
+        if delegate.is_null() {
+            return Err(Error::CreateEdgeTpuDelegate);
+        }
+
+        Ok(Delegate {
+            delegate,
+            _p: PhantomData,
+        })
     }
 }
 
@@ -70,39 +85,9 @@ pub(crate) struct Delegate<'del> {
     _p: PhantomData<&'del ()>,
 }
 
-impl<K, V> std::convert::TryFrom<(K, V)> for tflite_sys::edgetpu_option
-where
-    K: Into<String>,
-    V: Into<String>,
-{
-    type Error = Error;
-
-    fn try_from((k, v): (K, V)) -> Result<Self, Self::Error> {
-        Ok(Self {
-            name: CString::new(k.into())
-                .map_err(Error::KeyToCString)?
-                .as_ptr(),
-            value: CString::new(v.into())
-                .map_err(Error::ValueToCString)?
-                .as_ptr(),
-        })
-    }
-}
-
 impl<'del> Delegate<'del> {
-    pub(super) fn from_device<'dev>(device: Device<'dev>) -> Result<Self, Error> {
-        let delegate = unsafe {
-            tflite_sys::edgetpu_create_delegate(
-                device.r#type(),
-                std::ptr::null(),
-                std::ptr::null(),
-                0,
-            )
-        };
-        Ok(Self {
-            delegate,
-            _p: PhantomData,
-        })
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut tflite_sys::TfLiteDelegate {
+        self.delegate
     }
 }
 
