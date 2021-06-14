@@ -6,24 +6,22 @@ in
 pkgs.mkShell {
   name = "edgetpu";
   buildInputs = [ niv ] ++ (with pkgs; [
+    abseil-cpp
     cargo-edit
     cargo-udeps
     clang_10
-    abseil-cpp
-    pkg-config
-    tensorflow-lite
-    meson
-    libedgetpu
-    libcoral
     flatbuffers
+    libcoral
+    libedgetpu
     libv4l
-    xtensor
+    meson
     opencv4
-    v4l-utils
+    pkg-config
     rustToolchain
+    tensorflow-lite
+    v4l-utils
   ]);
 
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
   CLANG_PATH = "${pkgs.clang_10}/bin/clang";
-  PROTOC = "${pkgs.protobuf}/bin/protoc";
 }
