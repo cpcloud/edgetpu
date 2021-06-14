@@ -1,5 +1,3 @@
-use crate::pose::KeypointKind;
-
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
     #[error("failed to list devices: got null pointer instead")]
@@ -46,7 +44,7 @@ pub(crate) enum Error {
 
     #[cfg(not(target_arch = "aarch64"))]
     #[error("failed to convert keypoint variant to usize: {0:?}")]
-    KeypointVariantToUSize(KeypointKind),
+    KeypointVariantToUSize(crate::pose::KeypointKind),
 
     #[error("failed to create edgetpu delegate: got null pointer")]
     CreateEdgeTpuDelegate,

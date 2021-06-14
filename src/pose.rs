@@ -1,4 +1,6 @@
+#[cfg(not(target_arch = "aarch64"))]
 use crate::error::Error;
+#[cfg(not(target_arch = "aarch64"))]
 use num_traits::cast::ToPrimitive;
 
 #[derive(Debug, Copy, Clone, num_derive::FromPrimitive, num_derive::ToPrimitive)]
