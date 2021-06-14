@@ -44,6 +44,7 @@ pub(crate) enum Error {
     #[error("failed to create interpreter, got null pointer")]
     CreateInterpreter,
 
+    #[cfg(not(target_arch = "aarch64"))]
     #[error("failed to convert keypoint variant to usize: {0:?}")]
     KeypointVariantToUSize(KeypointKind),
 

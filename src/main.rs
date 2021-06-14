@@ -150,16 +150,15 @@ struct Opt {
     wait_key_ms: i32,
 }
 
+#[cfg(not(target_arch = "aarch64"))]
 fn wait_q(delay_ms: i32) -> Result<bool> {
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        const Q_KEY: u8 = b'q';
-        Ok(opencv::highgui::wait_key(delay_ms)? != i32::from(Q_KEY))
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        Ok(true)
-    }
+    const Q_KEY: u8 = b'q';
+    Ok(opencv::highgui::wait_key(delay_ms)? != i32::from(Q_KEY))
+}
+
+#[cfg(target_arch = "aarch64")]
+fn wait_q(_delay_ms: i32) -> Result<bool> {
+    Ok(true)
 }
 
 fn main() -> Result<()> {
