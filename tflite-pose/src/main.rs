@@ -108,49 +108,55 @@ fn draw_poses(
 
 #[derive(structopt::StructOpt)]
 struct Opt {
-    /// Path to a Tensorflow Lite model
+    /// Path to a Tensorflow Lite edgetpu model.
     #[structopt()]
     model: PathBuf,
 
-    /// /dev/videoDEVICE
+    /// A v42l compatible device: /dev/videoDEVICE
     #[structopt(short, long, default_value = "0")]
     device: i32,
 
-    /// Width of the model image
+    /// The width of the image the model expects.
     #[structopt(short, long, default_value = "641")]
     width: u16,
 
-    /// Height of the model image
+    /// The height of the image the model expects.
     #[structopt(short = "-H", long, default_value = "481")]
     height: u16,
 
-    /// Pose keypoint score threshold
+    /// Pose keypoint score threshold.
     #[structopt(short, long, default_value = "0.2")]
     threshold: f32,
 
+    /// The width of the input frame.
     #[structopt(long)]
     frame_width: Option<u16>,
 
+    /// The height of the input frame.
     #[structopt(long)]
     frame_height: Option<u16>,
 
+    // TH
     #[structopt(short, long, default_value = "1")]
     wait_key_ms: i32,
 }
 
-const Q_KEY: i32 = b'q' as i32;
+const Q_KEY: u8 = b'q';
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
     let threshold = opt.threshold;
 
     let mut capture = VideoCapture::new(opt.device, CAP_V4L2)?;
+
     if let Some(width) = opt.frame_width.map(f64::from) {
         capture.set(CAP_PROP_FRAME_WIDTH, width)?;
     }
+
     if let Some(height) = opt.frame_height.map(f64::from) {
         capture.set(CAP_PROP_FRAME_HEIGHT, height)?;
     }
+
     let width = capture.get(CAP_PROP_FRAME_WIDTH)?;
     let height = capture.get(CAP_PROP_FRAME_HEIGHT)?;
     println!("width: {}, height: {}", width, height);
@@ -167,10 +173,9 @@ fn main() -> Result<()> {
     let mut engine = engine::Engine::new(opt.model)?;
 
     let mut nframes = 0;
-
     let mut frame_duration = Default::default();
 
-    while wait_key(opt.wait_key_ms)? != Q_KEY {
+    while wait_key(opt.wait_key_ms)? != i32::from(Q_KEY) {
         let frame_start = Instant::now();
         capture.read(&mut in_frame)?;
         frame_duration += frame_start.elapsed();
