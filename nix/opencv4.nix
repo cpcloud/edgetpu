@@ -10,9 +10,9 @@ self: super:
       enableOpenblas = false;
       enableIpp = false;
       enableFfmpeg = false;
-      enableGStreamer = true;
+      enableGStreamer = false;
       enableGtk2 = false;
-      enableGtk3 = false;
+      enableGtk3 = !self.stdenv.isAarch64;
       enableTesseract = false;
       enableTbb = false;
       enableVtk = false;
@@ -28,6 +28,16 @@ self: super:
     attrs:
     let
       lib = super.lib;
+      buildList = lib.concatStringsSep "," (
+        [
+          "videoio"
+          "video"
+          "calib3d"
+          "objdetect"
+          "bgsegm"
+        ] ++
+        lib.optionals (!self.stdenv.isAarch64) [ "highgui" ]
+      );
     in
     {
       buildInputs = lib.remove self.protobuf attrs.buildInputs;
@@ -49,7 +59,7 @@ self: super:
         "-DWITH_IMGCODEC_PFM=OFF"
         "-DWITH_QUIRC=OFF"
         "-DWITH_WEBP=OFF"
-        "-DBUILD_LIST=videoio,video,calib3d,objdetect,bgsegm"
+        "-DBUILD_LIST=${buildList}"
       ] ++ lib.filter (f: !lib.strings.hasInfix "WITH_OPENMP" f) (lib.flatten attrs.cmakeFlags);
     }
   );
