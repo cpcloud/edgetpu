@@ -1,14 +1,11 @@
-use crate::{
-    edgetpu::{Delegate, Devices},
-    error::Error,
-    tflite_sys,
-};
+use crate::{edgetpu::Devices, error::Error, tflite_sys};
 use std::{
     convert::TryFrom, ffi::CString, marker::PhantomData, os::unix::ffi::OsStrExt, path::Path,
 };
 
-pub(super) struct Model {
+pub(crate) struct Model<'m> {
     model: *mut tflite_sys::TfLiteModel,
+    _p: PhantomData<&'m ()>,
 }
 
 fn path_to_c_string<P>(path: P) -> Result<CString, Error>
@@ -18,26 +15,34 @@ where
     CString::new(path.as_ref().as_os_str().as_bytes()).map_err(Error::PathToCString)
 }
 
-impl Model {
-    pub(super) fn new<P>(path: P) -> Result<Self, Error>
+impl<'m> Model<'m> {
+    pub(crate) fn new<P>(path: P) -> Result<Self, Error>
     where
         P: AsRef<Path>,
     {
         let path_ref = path.as_ref();
         let path_bytes = path_to_c_string(path_ref)?;
         // # SAFETY: path_bytes.as_ptr() is guaranteed to be valid
-        let model = unsafe { tflite_sys::TfLiteModelCreateFromFile(path_bytes.as_ptr()) };
-        if model.is_null() {
-            return Err(Error::GetModelFromFile);
-        }
+        let model = check_null_mut(
+            unsafe { tflite_sys::TfLiteModelCreateFromFile(path_bytes.as_ptr()) },
+            || Error::GetModelFromFile,
+        )?;
 
-        Ok(Self { model })
+        Ok(Self {
+            model,
+            _p: PhantomData,
+        })
+    }
+
+    // SAFETY: You must _not_ deallocate the returned pointer
+    fn as_mut_ptr(&mut self) -> *mut tflite_sys::TfLiteModel {
+        self.model
     }
 }
 
-impl Drop for Model {
+impl<'m> Drop for Model<'m> {
     fn drop(&mut self) {
-        // # SAFETY: self.model is guaranteed to be valid
+        // SAFETY: self.model is guaranteed to be valid
         unsafe {
             tflite_sys::TfLiteModelDelete(self.model);
         }
@@ -104,9 +109,12 @@ impl<'a> Tensor<'a> {
     }
 }
 
-pub(super) struct Interpreter {
+pub(crate) struct Interpreter<'i, 'd, 'm> {
     interpreter: *mut tflite_sys::TfLiteInterpreter,
     options: *mut tflite_sys::TfLiteInterpreterOptions,
+    _devices: Devices<'d>,
+    _model: Model<'m>,
+    _p: PhantomData<&'i ()>,
 }
 
 mod coral {
@@ -118,64 +126,81 @@ mod coral {
             options_keys: *mut *mut std::os::raw::c_char,
             options_values: *mut *mut std::os::raw::c_char,
             num_options: usize,
-            error_handler: Option<unsafe extern "C" fn(message: *const std::os::raw::c_char)>,
+            error_handler: Option<unsafe extern "C" fn(_: *const std::os::raw::c_char)>,
         ) -> *mut tflite_sys::TfLiteDelegate;
     }
 }
 
-impl Interpreter {
-    pub(super) fn new<P>(path: P) -> Result<Self, Error>
+fn check_null_mut<T>(ptr: *mut T, e: impl FnOnce() -> Error) -> Result<*mut T, Error> {
+    if ptr.is_null() {
+        Err(e())
+    } else {
+        Ok(ptr)
+    }
+}
+
+impl<'i, 'd, 'm> Interpreter<'i, 'd, 'm> {
+    pub(crate) fn new<P>(path: P) -> Result<Self, Error>
     where
         P: AsRef<Path>,
     {
-        let model = Model::new(path)?;
-        let devices = Devices::new()?;
-        let device = devices.iter().next().ok_or(Error::GetDeviceAtIndex(0))??;
-        let edgetpu_delegate = Delegate::from_device(device)?;
-        let (interpreter, options) = unsafe {
+        let (interpreter, options, devices, model) = unsafe {
             // # SAFETY: we check nullness
-            let options = tflite_sys::TfLiteInterpreterOptionsCreate();
-            if options.is_null() {
-                return Err(Error::CreateOptions);
-            }
+            let options = check_null_mut(tflite_sys::TfLiteInterpreterOptionsCreate(), || {
+                Error::CreateOptions
+            })?;
 
             // add posenet decoder
-            let posenet_delegate = coral::tflite_plugin_create_delegate(
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                0,
-                None,
-            );
-
-            // SAFETY: all inputs are valid
-            tflite_sys::TfLiteInterpreterOptionsAddDelegate(options, edgetpu_delegate.delegate);
+            let posenet_delegate = check_null_mut(
+                coral::tflite_plugin_create_delegate(
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    0,
+                    None,
+                ),
+                || Error::CreatePosenetDecoderDelegate,
+            )?;
             tflite_sys::TfLiteInterpreterOptionsAddDelegate(options, posenet_delegate);
+
+            let devices = Devices::new()?;
+            for device in devices.iter() {
+                let dev = device?;
+                let mut edgetpu_delegate = dev.delegate()?;
+                tflite_sys::TfLiteInterpreterOptionsAddDelegate(
+                    options,
+                    edgetpu_delegate.as_mut_ptr(),
+                );
+            }
 
             // SAFETY: all inputs are valid
             tflite_sys::TfLiteInterpreterOptionsSetEnableDelegateFallback(options, false);
 
             // SAFETY: checkk nullness of interpreter
-            let interpreter = tflite_sys::TfLiteInterpreterCreate(model.model, options);
-            if interpreter.is_null() {
-                return Err(Error::CreateInterpreter);
-            }
-            (interpreter, options)
+            let mut model = Model::new(path)?;
+            let interpreter = check_null_mut(
+                tflite_sys::TfLiteInterpreterCreate(model.as_mut_ptr(), options),
+                || Error::CreateInterpreter,
+            )?;
+            (interpreter, options, devices, model)
         };
         Ok(Self {
             interpreter,
             options,
+            _devices: devices,
+            _model: model,
+            _p: PhantomData,
         })
     }
 
-    pub(super) fn allocate_tensors(&mut self) -> Result<(), Error> {
+    pub(crate) fn allocate_tensors(&mut self) -> Result<(), Error> {
         status_to_result(unsafe { tflite_sys::TfLiteInterpreterAllocateTensors(self.interpreter) })
     }
 
-    pub(super) fn invoke(&mut self) -> Result<(), Error> {
+    pub(crate) fn invoke(&mut self) -> Result<(), Error> {
         status_to_result(unsafe { tflite_sys::TfLiteInterpreterInvoke(self.interpreter) })
     }
 
-    pub(super) fn get_input_tensor(&mut self, index: usize) -> Result<Tensor<'_>, Error> {
+    pub(crate) fn get_input_tensor(&mut self, index: usize) -> Result<Tensor<'_>, Error> {
         let index = i32::try_from(index).map_err(Error::GetFfiIndex)?;
         let pointer =
             unsafe { tflite_sys::TfLiteInterpreterGetInputTensor(self.interpreter, index) };
@@ -185,14 +210,14 @@ impl Interpreter {
         Tensor::new(pointer)
     }
 
-    pub(super) fn get_output_tensor_count(&self) -> usize {
+    pub(crate) fn get_output_tensor_count(&self) -> usize {
         usize::try_from(unsafe {
             tflite_sys::TfLiteInterpreterGetOutputTensorCount(self.interpreter)
         })
         .expect("failed to convert output tensor count i32 to usize")
     }
 
-    pub(super) fn get_output_tensor(&self, index: usize) -> Result<Tensor<'_>, Error> {
+    pub(crate) fn get_output_tensor(&self, index: usize) -> Result<Tensor<'_>, Error> {
         let index = i32::try_from(index).map_err(Error::GetFfiIndex)?;
         let pointer =
             unsafe { tflite_sys::TfLiteInterpreterGetOutputTensor(self.interpreter, index) };
@@ -203,7 +228,7 @@ impl Interpreter {
     }
 }
 
-impl Drop for Interpreter {
+impl<'i, 'd, 'm> Drop for Interpreter<'i, 'd, 'm> {
     fn drop(&mut self) {
         // # SAFETY: call accepts null pointers and self.interpreter/self.options are guaranteed to
         // be valid.
