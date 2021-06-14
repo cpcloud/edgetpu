@@ -2,9 +2,6 @@ use crate::pose::KeypointKind;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    #[error("failed to get typed data from OpenCV Mat")]
-    GetTypedData(#[source] opencv::Error),
-
     #[error("failed to list devices: got null pointer instead")]
     ListDevices,
 
@@ -29,14 +26,14 @@ pub(crate) enum Error {
     #[error("failed to convert usize value to keypoint kind: {0}")]
     ConvertUSizeToKeypointKind(usize),
 
-    #[error("tflite error")]
-    TfLite,
+    #[error("tflite error: {0}")]
+    TfLite(&'static str),
 
-    #[error("tflite delegate error")]
-    Delegate,
+    #[error("tflite delegate error: {0}")]
+    Delegate(&'static str),
 
-    #[error("tflite application error")]
-    Application,
+    #[error("tflite application error: {0}")]
+    Application(&'static str),
 
     #[error("failed to construct model from file: C API returned null pointer")]
     GetModelFromFile,
@@ -58,4 +55,13 @@ pub(crate) enum Error {
 
     #[error("failed to get edgetpu device: no devices found")]
     GetEdgeTpuDevice,
+
+    #[error("failed to get total number of elements")]
+    GetTotalNumberOfElements(#[source] opencv::Error),
+
+    #[error("failed to get number of channels in Mat")]
+    GetChannels(#[source] opencv::Error),
+
+    #[error("failed to get Mat data")]
+    GetMatData(#[source] opencv::Error),
 }

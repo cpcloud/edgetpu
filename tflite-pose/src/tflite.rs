@@ -53,12 +53,12 @@ impl<'m> Drop for Model<'m> {
     }
 }
 
-fn status_to_result(status: tflite_sys::TfLiteStatus) -> Result<(), Error> {
+fn status_to_result(status: tflite_sys::TfLiteStatus, msg: &'static str) -> Result<(), Error> {
     match status {
         tflite_sys::TfLiteStatus::kTfLiteOk => Ok(()),
-        tflite_sys::TfLiteStatus::kTfLiteError => Err(Error::TfLite),
-        tflite_sys::TfLiteStatus::kTfLiteDelegateError => Err(Error::Delegate),
-        tflite_sys::TfLiteStatus::kTfLiteApplicationError => Err(Error::Application),
+        tflite_sys::TfLiteStatus::kTfLiteError => Err(Error::TfLite(msg)),
+        tflite_sys::TfLiteStatus::kTfLiteDelegateError => Err(Error::Delegate(msg)),
+        tflite_sys::TfLiteStatus::kTfLiteApplicationError => Err(Error::Application(msg)),
         _ => panic!("unknown error code: {:?}", status),
     }
 }
@@ -107,9 +107,12 @@ impl<'a> Tensor<'a> {
 
     pub(crate) fn copy_from_buffer(&mut self, buf: &[u8]) -> Result<(), Error> {
         // SAFETY: buf is guaranteed to be valid and of len buf.len()
-        status_to_result(unsafe {
-            tflite_sys::TfLiteTensorCopyFromBuffer(self.tensor, buf.as_ptr() as _, buf.len())
-        })
+        status_to_result(
+            unsafe {
+                tflite_sys::TfLiteTensorCopyFromBuffer(self.tensor, buf.as_ptr() as _, buf.len())
+            },
+            "failed to copy from input buffer",
+        )
     }
 }
 
@@ -204,11 +207,17 @@ impl<'i, 'd, 'm> Interpreter<'i, 'd, 'm> {
     }
 
     pub(crate) fn allocate_tensors(&mut self) -> Result<(), Error> {
-        status_to_result(unsafe { tflite_sys::TfLiteInterpreterAllocateTensors(self.interpreter) })
+        status_to_result(
+            unsafe { tflite_sys::TfLiteInterpreterAllocateTensors(self.interpreter) },
+            "failed to allocate tensors",
+        )
     }
 
     pub(crate) fn invoke(&mut self) -> Result<(), Error> {
-        status_to_result(unsafe { tflite_sys::TfLiteInterpreterInvoke(self.interpreter) })
+        status_to_result(
+            unsafe { tflite_sys::TfLiteInterpreterInvoke(self.interpreter) },
+            "model invocation failed",
+        )
     }
 
     pub(crate) fn get_input_tensor(&mut self, index: usize) -> Result<Tensor<'_>, Error> {
