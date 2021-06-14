@@ -1,7 +1,7 @@
 use crate::pose::KeypointKind;
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub(crate) enum Error {
     #[error("failed to get typed data from OpenCV Mat")]
     GetTypedData(#[source] opencv::Error),
 
@@ -10,9 +10,6 @@ pub enum Error {
 
     #[error("invalid (null) pointer for device")]
     GetDevice,
-
-    #[error("no device at index: {0}")]
-    GetDeviceAtIndex(usize),
 
     #[error("failed to convert Path to CString")]
     PathToCString(#[source] std::ffi::NulError),
@@ -43,12 +40,6 @@ pub enum Error {
 
     #[error("failed to construct model from file: C API returned null pointer")]
     GetModelFromFile,
-
-    #[error("failed to convert key into edgetpu_option name")]
-    KeyToCString(#[source] std::ffi::NulError),
-
-    #[error("failed to convert value into edgetpu_option value")]
-    ValueToCString(#[source] std::ffi::NulError),
 
     #[error("failed to create TfLiteInterpreterOptions structure")]
     CreateOptions,
