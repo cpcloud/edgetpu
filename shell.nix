@@ -1,6 +1,5 @@
 let
-  sources = import ./nix;
-  inherit (sources) pkgs;
+  pkgs = import ./nix;
 in
 pkgs.mkShell {
   name = "edgetpu";
