@@ -1,6 +1,4 @@
-use opencv::core::Point2f;
-
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, num_derive::FromPrimitive)]
 pub(crate) enum KeypointKind {
     Nose,
     LeftEye,
@@ -21,29 +19,27 @@ pub(crate) enum KeypointKind {
     RightAnkle,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub(crate) struct Keypoint {
-    kind: KeypointKind,
-    point: Point2f,
-    score: f64,
+    pub(crate) kind: Option<KeypointKind>,
+    pub(crate) point: opencv::core::Point2f,
+    pub(crate) score: f32,
 }
 
-impl Default for Keypoint {
-    fn default() -> Self {
-        Self {
-            kind: KeypointKind::Nose,
-            point: Point2f::new(0.0_f32, 0.0_f32),
-            score: 0.0,
-        }
+pub(crate) type Keypoints = [Keypoint; std::mem::variant_count::<KeypointKind>()];
+
+pub(crate) struct Pose {
+    pub(crate) keypoints: Keypoints,
+    pub(crate) score: f32,
+}
+
+impl Pose {
+    pub(crate) fn new(keypoints: Keypoints, score: f32) -> Self {
+        Self { keypoints, score }
     }
 }
 
-pub(crate) struct Pose {
-    keypoints: [Keypoint; std::mem::variant_count::<KeypointKind>()],
-    score: f64,
-}
-
-const EDGES: [(KeypointKind, KeypointKind); 19] = [
+pub(crate) const KEYPOINT_EDGES: [(KeypointKind, KeypointKind); 19] = [
     (KeypointKind::Nose, KeypointKind::LeftEye),
     (KeypointKind::Nose, KeypointKind::RightEye),
     (KeypointKind::Nose, KeypointKind::LeftEar),

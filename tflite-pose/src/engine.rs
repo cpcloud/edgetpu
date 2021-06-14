@@ -1,67 +1,99 @@
-use crate::{errors::Error, pose, tflite};
+use crate::{
+    error::Error,
+    pose::{self, Keypoint, KeypointKind, Pose},
+    tflite,
+};
+use ndarray::ShapeBuilder;
+use num_traits::cast::FromPrimitive;
 use opencv::{core::Mat, prelude::*};
-use std::{path::Path, time::Duration};
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
 
-pub(crate) struct Engine {
-    interpreter: tflite::Interpreter,
-    input_tensor_shape: Vec<usize>,
-    output_offsets: Vec<usize>,
-    mirror: bool,
+pub(crate) struct Engine<'a> {
+    interpreter: tflite::Interpreter<'a>,
 }
 
-const NANOS_PER_MILLI: f64 = 1_000_000.0;
+pub(crate) struct Timing {
+    copy: Duration,
+    inference: Duration,
+    post_proc: Duration,
+}
 
-impl Engine {
-    pub(crate) fn new<P>(model_path: P, mirror: bool) -> Result<Self, Error>
+impl<'a> Engine<'a> {
+    pub(crate) fn new<P>(model_path: P) -> Result<Self, Error>
     where
         P: AsRef<Path>,
     {
-        let interpreter = tflite::Interpreter::new(model_path)?;
-        let input_tensor_shape = interpreter
-            .get_input_tensor_shape()
-            .into_iter()
-            .map(|&value| value as usize)
-            .collect::<Vec<_>>();
-        let output_offsets = interpreter
-            .get_all_output_tensors_sizes()
-            .iter()
-            .copied()
-            .scan(0, |result, shape| {
-                *result += shape;
-                Some(*result)
-            })
-            .collect();
         Ok(Self {
-            interpreter,
-            input_tensor_shape,
-            output_offsets,
-            mirror,
+            interpreter: tflite::Interpreter::new(model_path)?,
         })
     }
 
-    fn width(&self) -> usize {
-        self.input_tensor_shape[2]
-    }
+    pub(crate) fn detect_poses(
+        &'a mut self,
+        input: &'a Mat,
+    ) -> Result<(Vec<pose::Pose>, Timing), Error> {
+        let bytes = input.data_typed::<u8>().map_err(Error::GetTypedData)?;
 
-    fn depth(&self) -> usize {
-        self.input_tensor_shape[3]
-    }
+        let mut input_tensor = self.interpreter.get_input_tensor(0)?;
+        let start_copy = Instant::now();
+        input_tensor.copy_from_buffer(bytes);
+        let copy = start_copy.elapsed();
 
-    fn detect_poses(&mut self, input: &Mat) -> Result<(Vec<pose::Pose>, Duration), Error> {
-        let bytes = input
-            .data_typed::<u8>()
-            .map_err(Error::GetTypedData)?
-            .to_owned();
+        let start_inference = Instant::now();
+        self.interpreter.invoke()?;
+        let inference = start_inference.elapsed();
 
-        let sizes = self.interpreter.get_all_output_tensors_sizes();
-        let mut keypoints = vec![0; sizes[0]];
-        let mut keypoint_scores = vec![0; sizes[1]];
-        let mut pose_scores = vec![0; sizes[2]];
-        let nposes = self.interpreter.run_inference(bytes);
-        let inference_time = Duration::from_nanos(
-            (f64::from(self.interpreter.get_inference_time()) * NANOS_PER_MILLI) as u64,
-        );
+        let start_post_proc = Instant::now();
 
-        Ok((vec![], inference_time))
+        let sizes = self.interpreter.get_output_tensor_count();
+        assert_eq!(sizes, 4);
+
+        let mut poses = vec![];
+
+        let pose_keypoints = self
+            .interpreter
+            .get_output_tensor(0)
+            .and_then(|t| t.as_ndarray(*(t.dim(0), t.dim(1), t.dim(2)).into_shape().raw_dim()))?;
+        let keypoint_scores = self
+            .interpreter
+            .get_output_tensor(1)
+            .and_then(|t| t.as_ndarray(*(t.dim(0), t.dim(1)).into_shape().raw_dim()))?;
+        let pose_scores = self
+            .interpreter
+            .get_output_tensor(2)
+            .and_then(|t| t.as_ndarray(*t.dim(0).into_shape().raw_dim()))?;
+        let nposes = self.interpreter.get_output_tensor(3)?.as_slice()[0] as usize;
+
+        for (pose_i, keypoint) in pose_keypoints.axis_iter(ndarray::Axis(0)).enumerate() {
+            let mut keypoint_map: pose::Keypoints = Default::default();
+
+            for (point_i, point) in keypoint.axis_iter(ndarray::Axis(1)).enumerate() {
+                let mut keypoint = Keypoint {
+                    kind: Some(
+                        KeypointKind::from_usize(point_i)
+                            .ok_or(Error::ConvertUSizeToKeypointKind(point_i))?,
+                    ),
+                    point: opencv::core::Point2f::new(point[1], point[0]),
+                    score: keypoint_scores[(pose_i, point_i)],
+                };
+
+                keypoint_map[point_i] = keypoint;
+            }
+
+            poses.push(Pose::new(keypoint_map, pose_scores[pose_i]));
+        }
+        let post_proc = start_post_proc.elapsed();
+
+        Ok((
+            poses,
+            Timing {
+                copy,
+                inference,
+                post_proc,
+            },
+        ))
     }
 }

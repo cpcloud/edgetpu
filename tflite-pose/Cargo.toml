@@ -12,6 +12,8 @@ anyhow = "1.0.40"
 opencv = { version = "0.53.0", features = ["clang-runtime"] }
 thiserror = "1"
 ndarray = "0.15.2"
+num-derive = "0.3"
+num-traits = "0.2"
 
 [build-dependencies]
 anyhow = "1"
