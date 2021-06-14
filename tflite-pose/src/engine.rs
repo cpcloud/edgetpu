@@ -17,9 +17,9 @@ pub(crate) struct Engine {
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Timing {
-    copy: Duration,
-    inference: Duration,
-    post_proc: Duration,
+    pub(crate) copy: Duration,
+    pub(crate) inference: Duration,
+    pub(crate) post_proc: Duration,
 }
 
 impl Engine {

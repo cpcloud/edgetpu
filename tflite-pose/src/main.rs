@@ -1,8 +1,7 @@
 #![feature(variant_count, never_type)]
 use anyhow::Result;
-use num_traits::cast::ToPrimitive;
 use opencv::{
-    core::{Mat, Point2f, Scalar, CV_8UC3},
+    core::{Mat, Point2f, Point2i, Scalar, CV_8UC3},
     imgproc::{resize, INTER_LINEAR},
     prelude::*,
     videoio::{VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, CAP_V4L2},
@@ -24,36 +23,76 @@ fn draw_poses(
     threshold: f32,
     timing: engine::Timing,
     out_frame: &mut Mat,
+    nframes: usize,
+    width: u16,
 ) -> Result<()> {
     for pose in poses.into_iter() {
-        let xys = [None::<Point2f>; pose::NUM_KEYPOINTS];
+        let mut xys = [None::<Point2f>; pose::NUM_KEYPOINTS];
 
+        // pub fn circle(img: &mut dyn core::ToInputOutputArray, center: core::Point, radius: i32, color: core::Scalar, thickness: i32, line_type: i32, shift: i32) -> Result<()>
         for keypoint in pose.keypoints {
             if keypoint.score >= threshold {
                 let index = keypoint.kind.unwrap().idx()?;
                 xys[index] = Some(keypoint.point);
-                opencv::highgui::circle(
-                    &mut out_frame,
-                    keypoint.point,
+                opencv::imgproc::circle(
+                    out_frame,
+                    Point2i::new(keypoint.point.x as i32, keypoint.point.y as i32),
                     6,
                     Scalar::from((0.0, 255.0, 0.0)),
+                    -1,
+                    -1,
                     -1,
                 )?;
             }
         }
 
+        // pub fn line(img: &mut dyn core::ToInputOutputArray, pt1: core::Point, pt2: core::Point, color: core::Scalar, thickness: i32, line_type: i32, shift: i32) -> Result<()>;
         for (a, b) in pose::KEYPOINT_EDGES {
             if let (Some(a_point), Some(b_point)) = (xys[a.idx()?], xys[b.idx()?]) {
-                opencv::highgui::line(
-                    &mut out_frame,
-                    a_point,
-                    b_point,
+                opencv::imgproc::line(
+                    out_frame,
+                    Point2i::new(a_point.x as i32, a_point.y as i32),
+                    Point2i::new(b_point.x as i32, b_point.y as i32),
                     Scalar::from((0.0, 255.0, 255.0)),
                     2,
-                );
+                    -1,
+                    -1,
+                )?;
             }
         }
     }
+
+    let model_fps_text = format!(
+        "Model FPS: {:.1}",
+        nframes as f64 / timing.inference.as_secs_f64()
+    );
+    opencv::imgproc::put_text(
+        out_frame,
+        &model_fps_text,
+        Point2i::new(i32::from(width) / 2, 15),
+        opencv::imgproc::FONT_HERSHEY_SIMPLEX,
+        0.5,
+        Scalar::from((38.0, 0.0, 255.0)),
+        1,
+        opencv::imgproc::LINE_AA,
+        false,
+    )?;
+    let copy_fps_text = format!(
+        "Copy FPS: {:.1}",
+        nframes as f64 / timing.inference.as_secs_f64()
+    );
+    opencv::imgproc::put_text(
+        out_frame,
+        &copy_fps_text,
+        Point2i::new(i32::from(width) / 2, 15),
+        opencv::imgproc::FONT_HERSHEY_SIMPLEX,
+        0.5,
+        Scalar::from((38.0, 0.0, 255.0)),
+        1,
+        opencv::imgproc::LINE_AA,
+        false,
+    )?;
+    opencv::highgui::imshow("poses", out_frame)?;
     Ok(())
 }
 
@@ -112,8 +151,11 @@ fn main() -> Result<!> {
 
     let mut engine = engine::Engine::new(opt.model)?;
 
+    let mut nframes = 0;
+
     loop {
         capture.read(&mut in_frame)?;
+        nframes += 1;
 
         resize(
             &in_frame,
@@ -123,8 +165,16 @@ fn main() -> Result<!> {
             0.0,
             INTER_LINEAR,
         )?;
+
         let (poses, timings) = engine.detect_poses(&out_frame)?;
 
-        draw_poses(poses, threshold, timings, &mut out_frame)?;
+        draw_poses(
+            poses,
+            threshold,
+            timings,
+            &mut out_frame,
+            nframes,
+            opt.width,
+        )?;
     }
 }
