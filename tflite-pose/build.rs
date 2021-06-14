@@ -6,6 +6,7 @@ const LIBS: &[&str] = &["opencv4", "edgetpu", "tensorflow-lite"];
 fn main() -> Result<()> {
     println!("cargo:rustc-link-lib=edgetpu");
     println!("cargo:rustc-link-lib=static=tensorflow-lite");
+    println!("cargo:rustc-link-lib=posenet_decoder");
     println!("cargo:rerun-if-changed=wrapper.h");
 
     // XXX: why tho?

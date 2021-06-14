@@ -1,4 +1,7 @@
-#[derive(Debug, Copy, Clone, num_derive::FromPrimitive)]
+use crate::error::Error;
+use num_traits::cast::ToPrimitive;
+
+#[derive(Debug, Copy, Clone, num_derive::FromPrimitive, num_derive::ToPrimitive)]
 pub(crate) enum KeypointKind {
     Nose,
     LeftEye,
@@ -19,6 +22,12 @@ pub(crate) enum KeypointKind {
     RightAnkle,
 }
 
+impl KeypointKind {
+    pub(crate) fn idx(self) -> Result<usize, Error> {
+        self.to_usize().ok_or(Error::KeypointVariantToUSize(self))
+    }
+}
+
 #[derive(Debug, Copy, Clone, Default)]
 pub(crate) struct Keypoint {
     pub(crate) kind: Option<KeypointKind>,
@@ -26,8 +35,10 @@ pub(crate) struct Keypoint {
     pub(crate) score: f32,
 }
 
-pub(crate) type Keypoints = [Keypoint; std::mem::variant_count::<KeypointKind>()];
+pub(crate) const NUM_KEYPOINTS: usize = std::mem::variant_count::<KeypointKind>();
+pub(crate) type Keypoints = [Keypoint; NUM_KEYPOINTS];
 
+#[derive(Debug, Copy, Clone)]
 pub(crate) struct Pose {
     pub(crate) keypoints: Keypoints,
     pub(crate) score: f32,
