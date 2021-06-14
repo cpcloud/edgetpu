@@ -19,3 +19,7 @@ num-traits = "0.2"
 anyhow = "1"
 bindgen = "0.58.1"
 pkg-config = "0.3.19"
+
+[profile.release]
+lto = true
+codegen-units = 1
