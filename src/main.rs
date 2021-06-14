@@ -150,7 +150,6 @@ struct Opt {
     wait_key_ms: i32,
 }
 
-#[cfg(not(target_arch = "aarch64"))]
 fn wait_q(delay_ms: i32) -> Result<bool> {
     #[cfg(not(target_arch = "aarch64"))]
     {
