@@ -8,14 +8,6 @@ edition = "2018"
 default = []
 gui = []
 
-[[bin]]
-name = "tflite-pose"
-path = "src/main.rs"
-
-[[bin]]
-name = "remove_decoder"
-path = "src/remove_decoder.rs"
-
 [dependencies]
 anyhow = "1"
 ctrlc = "3"
