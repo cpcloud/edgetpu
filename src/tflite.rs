@@ -1,15 +1,16 @@
 use crate::{
-    edgetpu::{Delegate, Devices},
-    error::Error,
+    edgetpu::Devices,
+    error::{check_null, check_null_mut, tflite_status_to_result, Error},
     tflite_sys,
 };
 use std::{
     convert::TryFrom, ffi::CString, marker::PhantomData, os::unix::ffi::OsStrExt, path::Path,
 };
 
-pub(crate) struct Model<'m> {
+/// A safe TFLiteModel wrapper.
+pub(crate) struct Model {
+    /// SAFETY: `model` is fully owned.
     model: *mut tflite_sys::TfLiteModel,
-    _p: PhantomData<&'m ()>,
 }
 
 fn path_to_c_string<P>(path: P) -> Result<CString, Error>
@@ -19,7 +20,7 @@ where
     CString::new(path.as_ref().as_os_str().as_bytes()).map_err(Error::PathToCString)
 }
 
-impl<'m> Model<'m> {
+impl Model {
     pub(crate) fn new<P>(path: P) -> Result<Self, Error>
     where
         P: AsRef<Path>,
@@ -32,10 +33,7 @@ impl<'m> Model<'m> {
             || Error::GetModelFromFile,
         )?;
 
-        Ok(Self {
-            model,
-            _p: PhantomData,
-        })
+        Ok(Self { model })
     }
 
     // SAFETY: You must _not_ deallocate the returned pointer
@@ -44,22 +42,12 @@ impl<'m> Model<'m> {
     }
 }
 
-impl<'m> Drop for Model<'m> {
+impl Drop for Model {
     fn drop(&mut self) {
         // SAFETY: self.model is guaranteed to be valid
         unsafe {
             tflite_sys::TfLiteModelDelete(self.model);
         }
-    }
-}
-
-fn status_to_result(status: tflite_sys::TfLiteStatus, msg: &'static str) -> Result<(), Error> {
-    match status {
-        tflite_sys::TfLiteStatus::kTfLiteOk => Ok(()),
-        tflite_sys::TfLiteStatus::kTfLiteError => Err(Error::TfLite(msg)),
-        tflite_sys::TfLiteStatus::kTfLiteDelegateError => Err(Error::Delegate(msg)),
-        tflite_sys::TfLiteStatus::kTfLiteApplicationError => Err(Error::Application(msg)),
-        _ => panic!("unknown error code: {:?}", status),
     }
 }
 
@@ -106,7 +94,7 @@ impl<'a> Tensor<'a> {
 
     pub(crate) fn copy_from_buffer(&mut self, buf: &[u8]) -> Result<(), Error> {
         // SAFETY: buf is guaranteed to be valid and of len buf.len()
-        status_to_result(
+        tflite_status_to_result(
             unsafe {
                 tflite_sys::TfLiteTensorCopyFromBuffer(self.tensor, buf.as_ptr() as _, buf.len())
             },
@@ -115,15 +103,19 @@ impl<'a> Tensor<'a> {
     }
 }
 
-pub(crate) struct Interpreter<'i, 'd, 'm> {
+type Delegate = (
+    *mut tflite_sys::TfLiteDelegate,
+    Box<dyn FnOnce(*mut tflite_sys::TfLiteDelegate)>,
+);
+
+pub(crate) struct Interpreter {
     interpreter: *mut tflite_sys::TfLiteInterpreter,
     options: *mut tflite_sys::TfLiteInterpreterOptions,
     // these fields are never accessed, they are only here to ensure that
     // resources created by interpreter/options live as long as interpreter/options
-    _devices: Devices<'d>,
-    _model: Model<'m>,
-    _delegates: Vec<Delegate<'d>>,
-    _p: PhantomData<&'i ()>,
+    _devices: Devices,
+    _model: Model,
+    delegates: Vec<Delegate>,
 }
 
 mod coral {
@@ -137,98 +129,98 @@ mod coral {
             num_options: usize,
             error_handler: Option<unsafe extern "C" fn(_: *const std::os::raw::c_char)>,
         ) -> *mut tflite_sys::TfLiteDelegate;
+
+        #[link(name = "posenet_decoder")]
+        pub fn tflite_plugin_destroy_delegate(delegate: *mut tflite_sys::TfLiteDelegate);
     }
 }
 
-fn check_null_mut<T>(ptr: *mut T, e: impl FnOnce() -> Error) -> Result<*mut T, Error> {
-    if ptr.is_null() {
-        Err(e())
-    } else {
-        Ok(ptr)
-    }
-}
-
-fn check_null<T>(ptr: *const T, e: impl FnOnce() -> Error) -> Result<*const T, Error> {
-    if ptr.is_null() {
-        Err(e())
-    } else {
-        Ok(ptr)
-    }
-}
-
-impl<'i, 'd, 'm> Interpreter<'i, 'd, 'm> {
+impl Interpreter {
     pub(crate) fn new<P>(path: P) -> Result<Self, Error>
     where
         P: AsRef<Path>,
     {
-        Ok(unsafe {
+        let options = check_null_mut(
             // SAFETY: we check nullness, API is guaranteed to return a valid pointer
-            let options = check_null_mut(tflite_sys::TfLiteInterpreterOptionsCreate(), || {
-                Error::CreateOptions
-            })?;
+            unsafe { tflite_sys::TfLiteInterpreterOptionsCreate() },
+            || Error::CreateOptions,
+        )?;
 
-            // add posenet decoder
+        // add posenet decoder
+        let posenet_decoder_delegate = check_null_mut(
             // SAFETY: the delegate is guaranteed to be valid
-            let posenet_delegate = check_null_mut(
+            unsafe {
                 coral::tflite_plugin_create_delegate(
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
                     0,
                     None,
-                ),
-                || Error::CreatePosenetDecoderDelegate,
-            )?;
+                )
+            },
+            || Error::CreatePosenetDecoderDelegate,
+        )?;
 
-            // SAFETY: options and posenet_delegate are both valid pointers
-            tflite_sys::TfLiteInterpreterOptionsAddDelegate(options, posenet_delegate);
+        // SAFETY: options and posenet_delegate are both valid pointers
+        unsafe {
+            tflite_sys::TfLiteInterpreterOptionsAddDelegate(options, posenet_decoder_delegate);
+        }
 
-            let devices = Devices::new()?;
-            if devices.is_empty() {
-                return Err(Error::GetEdgeTpuDevice);
+        let devices = Devices::new()?;
+        if devices.is_empty() {
+            return Err(Error::GetEdgeTpuDevice);
+        }
+
+        let mut delegates: Vec<(_, Box<dyn FnOnce(_)>)> = Vec::with_capacity(devices.len());
+        delegates.push((
+            posenet_decoder_delegate,
+            // SAFETY: delegate is a valid pointer
+            Box::new(|delegate| unsafe { coral::tflite_plugin_destroy_delegate(delegate) }),
+        ));
+
+        for device in devices.iter() {
+            let edgetpu_delegate = device.delegate()?;
+
+            // SAFETY: options and edgetpu_delegate are both valid pointers
+            unsafe {
+                tflite_sys::TfLiteInterpreterOptionsAddDelegate(options, edgetpu_delegate);
             }
 
-            let mut delegates = Vec::with_capacity(devices.len());
+            delegates.push((
+                edgetpu_delegate,
+                Box::new(|delegate| unsafe { tflite_sys::edgetpu_free_delegate(delegate) }),
+            ));
+        }
 
-            for device in devices.iter() {
-                let mut edgetpu_delegate = device?.delegate()?;
-
-                // SAFETY: options and edgetpu_delegate are both valid pointers
-                tflite_sys::TfLiteInterpreterOptionsAddDelegate(
-                    options,
-                    edgetpu_delegate.as_mut_ptr(),
-                );
-                delegates.push(edgetpu_delegate);
-            }
-
-            // SAFETY: options is a valid pointer
+        // SAFETY: options is a valid pointer
+        unsafe {
             tflite_sys::TfLiteInterpreterOptionsSetEnableDelegateFallback(options, false);
+        }
 
-            let mut model = Model::new(path)?;
-            let interpreter = check_null_mut(
-                // SAFETY: model and options are both valid pointers
-                tflite_sys::TfLiteInterpreterCreate(model.as_mut_ptr(), options),
-                || Error::CreateInterpreter,
-            )?;
-            Self {
-                interpreter,
-                options,
-                _devices: devices,
-                _model: model,
-                _delegates: delegates,
-                _p: PhantomData,
-            }
+        let mut model = Model::new(path)?;
+        let interpreter = check_null_mut(
+            // SAFETY: model and options are both valid pointers
+            unsafe { tflite_sys::TfLiteInterpreterCreate(model.as_mut_ptr(), options) },
+            || Error::CreateInterpreter,
+        )?;
+
+        Ok(Self {
+            interpreter,
+            options,
+            _devices: devices,
+            _model: model,
+            delegates,
         })
     }
 
     pub(crate) fn allocate_tensors(&mut self) -> Result<(), Error> {
-        status_to_result(
+        tflite_status_to_result(
             unsafe { tflite_sys::TfLiteInterpreterAllocateTensors(self.interpreter) },
             "failed to allocate tensors",
         )
     }
 
     pub(crate) fn invoke(&mut self) -> Result<(), Error> {
-        status_to_result(
+        tflite_status_to_result(
             unsafe { tflite_sys::TfLiteInterpreterInvoke(self.interpreter) },
             "model invocation failed",
         )
@@ -260,8 +252,12 @@ impl<'i, 'd, 'm> Interpreter<'i, 'd, 'm> {
     }
 }
 
-impl<'i, 'd, 'm> Drop for Interpreter<'i, 'd, 'm> {
+impl Drop for Interpreter {
     fn drop(&mut self) {
+        for (delegate, dropper) in self.delegates.drain(..) {
+            dropper(delegate);
+        }
+
         // # SAFETY: call accepts null pointers and self.interpreter/self.options are guaranteed to
         // be valid.
         unsafe {

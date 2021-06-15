@@ -47,12 +47,6 @@ pub(crate) struct Pose {
     pub(crate) score: f32,
 }
 
-impl Pose {
-    pub(crate) fn new(keypoints: Keypoints, score: f32) -> Self {
-        Self { keypoints, score }
-    }
-}
-
 #[cfg(not(target_arch = "aarch64"))]
 pub(crate) const KEYPOINT_EDGES: [(KeypointKind, KeypointKind); 19] = [
     (KeypointKind::Nose, KeypointKind::LeftEye),

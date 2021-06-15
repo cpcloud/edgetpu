@@ -11,8 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) struct Engine<'i, 'd, 'm> {
-    interpreter: tflite::Interpreter<'i, 'd, 'm>,
+pub(crate) struct Engine {
+    interpreter: tflite::Interpreter,
     pub(crate) timing: Timing,
 }
 
@@ -21,7 +21,7 @@ pub(crate) struct Timing {
     pub(crate) inference: Duration,
 }
 
-impl<'i, 'd, 'm> Engine<'i, 'd, 'm> {
+impl Engine {
     pub(crate) fn new<P>(model_path: P) -> Result<Self, Error>
     where
         P: AsRef<Path>,
@@ -95,7 +95,10 @@ impl<'i, 'd, 'm> Engine<'i, 'd, 'm> {
                 };
             }
 
-            poses.push(Pose::new(keypoint_map, pose_scores[pose_i]));
+            poses.push(Pose {
+                keypoints: keypoint_map,
+                score: pose_scores[pose_i],
+            });
         }
 
         Ok(poses)

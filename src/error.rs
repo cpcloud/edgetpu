@@ -1,10 +1,9 @@
+use crate::tflite_sys;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
     #[error("failed to list devices: got null pointer instead")]
     ListDevices,
-
-    #[error("invalid (null) pointer for device")]
-    GetDevice,
 
     #[error("failed to convert Path to CString")]
     PathToCString(#[source] std::ffi::NulError),
@@ -63,4 +62,33 @@ pub(crate) enum Error {
 
     #[error("failed to get Mat data")]
     GetMatData(#[source] opencv::Error),
+}
+
+pub(crate) fn check_null_mut<T>(ptr: *mut T, e: impl FnOnce() -> Error) -> Result<*mut T, Error> {
+    if ptr.is_null() {
+        Err(e())
+    } else {
+        Ok(ptr)
+    }
+}
+
+pub(crate) fn check_null<T>(ptr: *const T, e: impl FnOnce() -> Error) -> Result<*const T, Error> {
+    if ptr.is_null() {
+        Err(e())
+    } else {
+        Ok(ptr)
+    }
+}
+
+pub(crate) fn tflite_status_to_result(
+    status: tflite_sys::TfLiteStatus,
+    msg: &'static str,
+) -> Result<(), Error> {
+    match status {
+        tflite_sys::TfLiteStatus::kTfLiteOk => Ok(()),
+        tflite_sys::TfLiteStatus::kTfLiteError => Err(Error::TfLite(msg)),
+        tflite_sys::TfLiteStatus::kTfLiteDelegateError => Err(Error::Delegate(msg)),
+        tflite_sys::TfLiteStatus::kTfLiteApplicationError => Err(Error::Application(msg)),
+        _ => panic!("unknown error code: {:?}", status),
+    }
 }

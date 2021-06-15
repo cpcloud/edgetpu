@@ -1,64 +1,50 @@
-use crate::{error::Error, tflite_sys};
-use std::marker::PhantomData;
+use crate::{
+    error::{check_null_mut, Error},
+    tflite_sys,
+};
 
-pub(crate) struct Devices<'a> {
-    devices: *mut tflite_sys::edgetpu_device,
+/// A list of coral edge TPU devices
+pub(crate) struct Devices {
+    /// SAFETY: This pointer is owned by the constructor and never mutated
+    devices: *const tflite_sys::edgetpu_device,
     len: usize,
-    _p: PhantomData<&'a ()>,
 }
 
-pub(crate) struct Device<'a> {
-    device: *mut tflite_sys::edgetpu_device,
-    _p: PhantomData<&'a ()>,
+pub(crate) struct Device<'parent> {
+    device: &'parent tflite_sys::edgetpu_device,
 }
 
-impl<'a> Device<'a> {
-    fn new(device: *mut tflite_sys::edgetpu_device) -> Result<Self, Error> {
-        if device.is_null() {
-            return Err(Error::GetDevice);
-        }
-        Ok(Self {
-            device,
-            _p: PhantomData,
-        })
+impl<'parent> Device<'parent> {
+    fn new(device: &'parent tflite_sys::edgetpu_device) -> Self {
+        Self { device }
     }
 
-    pub(crate) fn delegate<'b>(&'a self) -> Result<Delegate<'b>, Error> {
-        let delegate = unsafe {
-            tflite_sys::edgetpu_create_delegate(
-                (*self.device).type_,
-                std::ptr::null(),
-                std::ptr::null(),
-                0,
-            )
-        };
-
-        if delegate.is_null() {
-            return Err(Error::CreateEdgeTpuDelegate);
-        }
-
-        Ok(Delegate {
-            delegate,
-            _p: PhantomData,
-        })
+    pub(crate) fn delegate(&self) -> Result<*mut tflite_sys::TfLiteDelegate, Error> {
+        check_null_mut(
+            // SAFETY: inputs are all valid, and the return value is checked for null
+            unsafe {
+                tflite_sys::edgetpu_create_delegate(
+                    (*self.device).type_,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    0,
+                )
+            },
+            || Error::CreateEdgeTpuDelegate,
+        )
     }
 }
 
-impl<'a> Devices<'a> {
+impl Devices {
     pub(crate) fn new() -> Result<Self, Error> {
         let mut len: usize = 0;
+        let devices = check_null_mut(
+            // SAFETY: len is guaranteed to point to valid data (and is checked by the implementation)
+            unsafe { tflite_sys::edgetpu_list_devices(&mut len) },
+            || Error::ListDevices,
+        )?;
 
-        // # SAFETY: check for nullness after return; len is guaranteed to point to valid data
-        let devices = unsafe { tflite_sys::edgetpu_list_devices(&mut len) };
-        if devices.is_null() {
-            return Err(Error::ListDevices);
-        }
-
-        Ok(Self {
-            devices,
-            len,
-            _p: PhantomData,
-        })
+        Ok(Self { devices, len })
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -69,37 +55,20 @@ impl<'a> Devices<'a> {
         self.len == 0
     }
 
-    pub(crate) fn iter(&'a self) -> impl Iterator<Item = Result<Device<'a>, Error>> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = Device> {
         // SAFETY: self.devices + 0..self.len() is guaranteed to be non-null
         let devices = self.devices;
-        (0..self.len()).map(move |offset| Device::new(unsafe { devices.add(offset) }))
+        (0..self.len()).map(move |offset| {
+            Device::new(unsafe { devices.add(offset).as_ref().expect("device is null") })
+        })
     }
 }
 
-impl<'a> Drop for Devices<'a> {
+impl Drop for Devices {
     fn drop(&mut self) {
+        // SAFETY: self.devices is valid
         unsafe {
-            tflite_sys::edgetpu_free_devices(self.devices);
-        }
-    }
-}
-
-pub(crate) struct Delegate<'del> {
-    pub(crate) delegate: *mut tflite_sys::TfLiteDelegate,
-    _p: PhantomData<&'del ()>,
-}
-
-impl<'del> Delegate<'del> {
-    pub(crate) fn as_mut_ptr(&mut self) -> *mut tflite_sys::TfLiteDelegate {
-        self.delegate
-    }
-}
-
-impl<'a> Drop for Delegate<'a> {
-    fn drop(&mut self) {
-        // # SAFETY: self.delegate is guaranteed to be valid
-        unsafe {
-            tflite_sys::edgetpu_free_delegate(self.delegate);
+            tflite_sys::edgetpu_free_devices(self.devices as _);
         }
     }
 }
