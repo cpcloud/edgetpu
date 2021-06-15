@@ -115,6 +115,17 @@ fn draw_poses(
     Ok(())
 }
 
+#[cfg(not(target_arch = "aarch64"))]
+fn wait_q(delay_ms: i32) -> Result<bool> {
+    const Q_KEY: u8 = b'q';
+    Ok(opencv::highgui::wait_key(delay_ms)? != i32::from(Q_KEY))
+}
+
+#[cfg(target_arch = "aarch64")]
+fn wait_q(_delay_ms: i32) -> Result<bool> {
+    Ok(true)
+}
+
 #[derive(structopt::StructOpt)]
 struct Opt {
     /// Path to a Tensorflow Lite edgetpu model.
@@ -148,17 +159,6 @@ struct Opt {
     // TH
     #[structopt(short, long, default_value = "1")]
     wait_key_ms: i32,
-}
-
-#[cfg(not(target_arch = "aarch64"))]
-fn wait_q(delay_ms: i32) -> Result<bool> {
-    const Q_KEY: u8 = b'q';
-    Ok(opencv::highgui::wait_key(delay_ms)? != i32::from(Q_KEY))
-}
-
-#[cfg(target_arch = "aarch64")]
-fn wait_q(_delay_ms: i32) -> Result<bool> {
-    Ok(true)
 }
 
 fn main() -> Result<()> {
