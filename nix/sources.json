@@ -5,10 +5,10 @@
         "homepage": "",
         "owner": "nix-community",
         "repo": "fenix",
-        "rev": "ff2c58b46ed7e6159f04801e2128949410d743c6",
-        "sha256": "0qpnk99cc5yb4bqd5wfa32a20m1z9jb0ggn42p5ywxf474v1n4aq",
+        "rev": "eea57fed2323c8b0358321932fe64e155cce9362",
+        "sha256": "0l567qjq2h72yd7z50cr5anl0aa0846ma6ncx2h7lg2a1ab87sp6",
         "type": "tarball",
-        "url": "https://github.com/nix-community/fenix/archive/ff2c58b46ed7e6159f04801e2128949410d743c6.tar.gz",
+        "url": "https://github.com/nix-community/fenix/archive/eea57fed2323c8b0358321932fe64e155cce9362.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "naersk": {
@@ -29,10 +29,10 @@
         "homepage": "https://github.com/nmattia/niv",
         "owner": "nmattia",
         "repo": "niv",
-        "rev": "e9e31a7248e0728ab67a5a911b7ef704b1e399c4",
-        "sha256": "0xc781ivc0qrbnvk3njfz6xxpfqr46f5gw5ykjc0588jy86bmk91",
+        "rev": "e0ca65c81a2d7a4d82a189f1e23a48d59ad42070",
+        "sha256": "1pq9nh1d8nn3xvbdny8fafzw87mj7gsmp6pxkdl65w2g18rmcmzx",
         "type": "tarball",
-        "url": "https://github.com/nmattia/niv/archive/e9e31a7248e0728ab67a5a911b7ef704b1e399c4.tar.gz",
+        "url": "https://github.com/nmattia/niv/archive/e0ca65c81a2d7a4d82a189f1e23a48d59ad42070.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
@@ -41,10 +41,10 @@
         "homepage": null,
         "owner": "cpcloud",
         "repo": "nixpkgs",
-        "rev": "8f7ab5ba24259824dbb913c3a1b375cfd8d93e41",
-        "sha256": "0qdhk13pfhv942z196avabbrngm99rkgxs2k7yp9dqfd2z1fyibg",
+        "rev": "8edc4739e448760809b00867792a9f667890b6b5",
+        "sha256": "0jys92c25l70sb9ikdrijlc2xmrakxikqysx5ljk27122m4y5s8s",
         "type": "tarball",
-        "url": "https://github.com/cpcloud/nixpkgs/archive/8f7ab5ba24259824dbb913c3a1b375cfd8d93e41.tar.gz",
+        "url": "https://github.com/cpcloud/nixpkgs/archive/8edc4739e448760809b00867792a9f667890b6b5.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
