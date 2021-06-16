@@ -1,4 +1,4 @@
-import json
+import ujson as json
 import subprocess
 import tempfile
 import itertools
@@ -60,11 +60,11 @@ def delete_decoder_from_json(path: Path):
 @click.option("-i", "--input", type=click.Path(exists=True), required=True)
 @click.option("-o", "--output-dir", type=click.Path(), required=True)
 @click.option("-s", "--fbs-schema", type=click.Path(exists=True), required=True)
-def main(input, output_dir, fbs_schema):
+def main(input: str, output_dir: str, fbs_schema: str) -> None:
     """Remove the decoding step from a pose edgetpu model."""
 
+    print("converting tflite to JSON")
     with tempfile.TemporaryDirectory() as json_output_dir:
-        print("converting tflite to JSON")
         tflite_to_json(input, json_output_dir, fbs_schema)
 
         model_path = Path(input)

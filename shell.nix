@@ -2,6 +2,14 @@ let
   pkgs = import ./nix;
   sources = import ./nix/sources.nix;
   niv = (import sources.niv { }).niv;
+  pythonEnv = pkgs.python3.withPackages(p: with p; [
+    click
+    ipdb
+    ipython
+    black
+    mypy
+    ujson
+  ]);
 in
 pkgs.mkShell {
   name = "edgetpu";
@@ -20,13 +28,7 @@ pkgs.mkShell {
     rustToolchain
     tensorflow-lite
     v4l-utils
-    (python3.withPackages(p: with p; [
-      click
-      ipdb
-      ipython
-      black
-      mypy
-    ]))
+    pythonEnv
   ]);
 
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
