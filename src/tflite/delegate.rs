@@ -1,5 +1,7 @@
+use std::convert::TryFrom;
+
 use crate::{
-    error::{check_null, Error},
+    error::{check_null, check_null_mut, Error},
     tflite_sys,
 };
 
@@ -7,6 +9,28 @@ use crate::{
 pub(crate) struct Delegate {
     delegate: *const tflite_sys::TfLiteDelegate,
     deleter: Box<dyn FnMut(*mut tflite_sys::TfLiteDelegate)>,
+}
+
+impl TryFrom<tflite_sys::edgetpu_device_type> for Delegate {
+    type Error = Error;
+
+    fn try_from(r#type: tflite_sys::edgetpu_device_type) -> Result<Self, Self::Error> {
+        Self::new(
+            check_null_mut(
+                // SAFETY: inputs are all valid, and the return value is checked for null
+                unsafe {
+                    tflite_sys::edgetpu_create_delegate(
+                        r#type,
+                        std::ptr::null(),
+                        std::ptr::null(),
+                        0,
+                    )
+                },
+            )
+            .ok_or(Error::CreateEdgeTpuDelegate)?,
+            |delegate| unsafe { tflite_sys::edgetpu_free_delegate(delegate) },
+        )
+    }
 }
 
 impl Delegate {

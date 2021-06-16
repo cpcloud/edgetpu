@@ -1,6 +1,5 @@
 use crate::{
     error::{check_null, check_null_mut, Error},
-    tflite::Delegate,
     tflite_sys,
 };
 
@@ -10,32 +9,6 @@ pub(crate) struct Devices {
     /// and is never mutated
     devices: *const tflite_sys::edgetpu_device,
     len: usize,
-}
-
-pub(crate) struct Device<'devices>(&'devices tflite_sys::edgetpu_device);
-
-impl<'devices> Device<'devices> {
-    fn new(device: &'devices tflite_sys::edgetpu_device) -> Self {
-        Self(device)
-    }
-
-    pub(crate) fn delegate(&self) -> Result<Delegate, Error> {
-        Delegate::new(
-            check_null_mut(
-                // SAFETY: inputs are all valid, and the return value is checked for null
-                unsafe {
-                    tflite_sys::edgetpu_create_delegate(
-                        (*self.0).type_,
-                        std::ptr::null(),
-                        std::ptr::null(),
-                        0,
-                    )
-                },
-            )
-            .ok_or(Error::CreateEdgeTpuDelegate)?,
-            |delegate| unsafe { tflite_sys::edgetpu_free_delegate(delegate) },
-        )
-    }
 }
 
 impl Devices {
@@ -60,7 +33,7 @@ impl Devices {
         self.len == 0
     }
 
-    /// Construct an iterator over devices.
+    /// Construct an iterator over device types.
     pub(crate) fn types(
         &self,
     ) -> impl Iterator<Item = Result<tflite_sys::edgetpu_device_type, Error>> {
@@ -68,7 +41,7 @@ impl Devices {
         let devices = self.devices;
         (0..self.len()).map(move |offset| {
             // SAFETY: devices is guaranteed to be valid, and pointing to data with offset < len
-            Ok(unsafe { *check_null(devices.add(offset), || Error::GetDevicePtr)? }.type_)
+            Ok(unsafe { *check_null(devices.add(offset)).ok_or(Error::GetDevicePtr)? }.type_)
         })
     }
 }
