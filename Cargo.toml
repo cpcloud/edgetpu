@@ -18,6 +18,8 @@ num-traits = "0.2"
 opencv = { version = "0.53.0", features = ["clang-runtime"] }
 structopt = "0.3.21"
 thiserror = "1"
+ordered-float = "2"
+itertools = "0.10"
 
 [build-dependencies]
 anyhow = "1"

@@ -47,6 +47,31 @@ pub(crate) struct Pose {
     pub(crate) score: f32,
 }
 
+pub(crate) mod constants {
+    use super::KeypointKind;
+
+    pub(crate) const LOCAL_MAXIMUM_RADIUS: usize = 1;
+
+    pub(crate) const POSE_CHAIN: [(KeypointKind, KeypointKind); 16] = [
+        (KeypointKind::Nose, KeypointKind::LeftEye),
+        (KeypointKind::LeftEye, KeypointKind::LeftEar),
+        (KeypointKind::Nose, KeypointKind::RightEye),
+        (KeypointKind::RightEye, KeypointKind::RightEar),
+        (KeypointKind::Nose, KeypointKind::LeftShoulder),
+        (KeypointKind::LeftShoulder, KeypointKind::LeftElbow),
+        (KeypointKind::LeftElbow, KeypointKind::LeftWrist),
+        (KeypointKind::LeftShoulder, KeypointKind::LeftHip),
+        (KeypointKind::LeftHip, KeypointKind::LeftKnee),
+        (KeypointKind::LeftKnee, KeypointKind::LeftAnkle),
+        (KeypointKind::Nose, KeypointKind::RightShoulder),
+        (KeypointKind::RightShoulder, KeypointKind::RightElbow),
+        (KeypointKind::RightElbow, KeypointKind::RightWrist),
+        (KeypointKind::RightShoulder, KeypointKind::RightHip),
+        (KeypointKind::RightHip, KeypointKind::RightKnee),
+        (KeypointKind::RightKnee, KeypointKind::RightAnkle),
+    ];
+}
+
 #[cfg(feature = "gui")]
 pub(crate) const KEYPOINT_EDGES: [(KeypointKind, KeypointKind); 19] = [
     (KeypointKind::Nose, KeypointKind::LeftEye),

@@ -19,6 +19,7 @@ use std::{
 };
 use structopt::StructOpt;
 
+mod decode;
 mod edgetpu;
 mod engine;
 mod error;
@@ -177,7 +178,15 @@ fn main() -> Result<()> {
     let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)?.to_mat()?;
     let out_frame_size = out_frame.size()?;
 
-    let mut engine = engine::Engine::new(opt.model)?;
+    let cpu_decoder = decode::CpuDecoder {
+        frame_height: height.to_u16().unwrap(),
+        frame_width: width.to_u16().unwrap(),
+        output_stride: 16,
+        max_pose_detections: 100,
+        score_threshold: 0.2,
+        nms_radius: 20,
+    };
+    let mut engine = engine::Engine::new(opt.model, cpu_decoder)?;
 
     let mut nframes = 0;
     let mut frame_duration = Default::default();

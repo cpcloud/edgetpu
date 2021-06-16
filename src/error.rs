@@ -5,6 +5,9 @@ pub(crate) enum Error {
     #[error("failed to list devices: got null pointer instead")]
     ListDevices,
 
+    #[error("got null pointer for device")]
+    GetDevicePtr,
+
     #[error("failed to convert Path to CString")]
     PathToCString(#[source] std::ffi::NulError),
 
@@ -14,8 +17,29 @@ pub(crate) enum Error {
     #[error("failed to get input tensor: got null pointer instead")]
     GetInputTensor,
 
+    #[error("failed to convert input tensor count i32 to usize")]
+    ConvertInputTensorCount(#[source] std::num::TryFromIntError),
+
+    #[error("failed to get input tensor at index {0}: only {1} input tensors available")]
+    InputTensorIndex(usize, usize),
+
     #[error("failed to get output tensor: got null pointer instead")]
     GetOutputTensor,
+
+    #[error("failed to convert output tensor count i32 to usize")]
+    ConvertOutputTensorCount(#[source] std::num::TryFromIntError),
+
+    #[error("expected {0} output tensors, got {1}")]
+    GetExpectedNumOutputs(usize, usize),
+
+    #[error("failed to get output tensor at index {0}: only {1} output tensors available")]
+    OutputTensorIndex(usize, usize),
+
+    #[error("failed to convert row count i32 to usize")]
+    ConvertRowsToUsize,
+
+    #[error("failed to get value of Mat::elemSize1")]
+    GetElemSize1(#[source] opencv::Error),
 
     #[error("failed to construct array view from TfLiteTensor")]
     ConstructArrayView(#[source] ndarray::ShapeError),
@@ -54,9 +78,6 @@ pub(crate) enum Error {
     #[error("failed to get edgetpu device: no devices found")]
     GetEdgeTpuDevice,
 
-    #[error("failed to get total number of elements")]
-    GetTotalNumberOfElements(#[source] opencv::Error),
-
     #[error("failed to get number of channels in Mat")]
     GetChannels(#[source] opencv::Error),
 
@@ -68,6 +89,27 @@ pub(crate) enum Error {
 
     #[error("failed to construct delegate, got null pointer")]
     ConstructDelegate,
+
+    #[error("failed to reshape offsets from {0:?} to {1:?}")]
+    ReshapeOffsets(
+        #[source] ndarray::ShapeError,
+        (usize, usize, usize),
+        [usize; 4],
+    ),
+
+    #[error("failed to reshape displacements_fwd from {0:?} to {1:?}")]
+    ReshapeFwdDisplacements(
+        #[source] ndarray::ShapeError,
+        (usize, usize, usize, usize),
+        [usize; 4],
+    ),
+
+    #[error("failed to reshape displacements_bwd from {0:?} to {1:?}")]
+    ReshapeBwdDisplacements(
+        #[source] ndarray::ShapeError,
+        (usize, usize, usize, usize),
+        [usize; 4],
+    ),
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {
