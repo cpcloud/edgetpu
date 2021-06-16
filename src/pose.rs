@@ -1,6 +1,6 @@
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(feature = "gui")]
 use crate::error::Error;
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(feature = "gui")]
 use num_traits::cast::ToPrimitive;
 
 #[derive(Debug, Copy, Clone, num_derive::FromPrimitive, num_derive::ToPrimitive)]
@@ -24,7 +24,7 @@ pub(crate) enum KeypointKind {
     RightAnkle,
 }
 
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(feature = "gui")]
 impl KeypointKind {
     pub(crate) fn idx(self) -> Result<usize, Error> {
         self.to_usize().ok_or(Error::KeypointVariantToUSize(self))
@@ -47,7 +47,7 @@ pub(crate) struct Pose {
     pub(crate) score: f32,
 }
 
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(feature = "gui")]
 pub(crate) const KEYPOINT_EDGES: [(KeypointKind, KeypointKind); 19] = [
     (KeypointKind::Nose, KeypointKind::LeftEye),
     (KeypointKind::Nose, KeypointKind::RightEye),

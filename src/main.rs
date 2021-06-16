@@ -1,6 +1,7 @@
 #![feature(variant_count)]
 
 use anyhow::{Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
 use num_traits::cast::ToPrimitive;
 use opencv::{
     core::{Mat, CV_8UC3},
@@ -21,107 +22,92 @@ mod pose;
 mod tflite;
 mod tflite_sys;
 
-#[cfg(not(target_arch = "aarch64"))]
 fn draw_poses(
-    poses: Vec<pose::Pose>,
-    threshold: f32,
+    #[cfg(feature = "gui")] poses: Vec<pose::Pose>,
+    #[cfg(not(feature = "gui"))] _poses: Vec<pose::Pose>,
+    #[cfg(feature = "gui")] threshold: f32,
+    #[cfg(not(feature = "gui"))] _threshold: f32,
     timing: engine::Timing,
-    out_frame: &mut Mat,
+    #[cfg(feature = "gui")] out_frame: &mut Mat,
+    #[cfg(not(feature = "gui"))] _out_frame: &mut Mat,
     frame_duration: Duration,
     nframes: usize,
-    width: u16,
+    pb_model_cam_fps: &indicatif::ProgressBar,
 ) -> Result<()> {
-    use opencv::{
-        core::{Point2i, Scalar},
-        imgproc::{FONT_HERSHEY_SIMPLEX, LINE_8, LINE_AA},
-    };
+    let nframes = nframes.to_f64().unwrap();
+    let fps_text = format!(
+        "FPS => model: {:.1}, cam: {:.1}",
+        nframes / timing.inference.as_secs_f64(),
+        nframes / frame_duration.as_secs_f64()
+    );
 
-    for pose in poses.into_iter() {
-        let mut xys = [None; pose::NUM_KEYPOINTS];
+    pb_model_cam_fps.set_message(fps_text.clone());
+    pb_model_cam_fps.inc(1);
 
-        for keypoint in pose.keypoints {
-            if keypoint.score >= threshold && keypoint.kind.is_some() {
-                let index = keypoint.kind.unwrap().idx()?;
-                xys[index] = Some(keypoint.point);
-                opencv::imgproc::circle(
-                    out_frame,
-                    Point2i::new(keypoint.point.x as i32, keypoint.point.y as i32),
-                    6,
-                    Scalar::from((0.0, 255.0, 0.0)),
-                    1,      // thickness
-                    LINE_8, // line_type
-                    0,      // shift
-                )?;
+    #[cfg(feature = "gui")]
+    {
+        use opencv::{
+            core::{Point2i, Scalar},
+            imgproc::{FONT_HERSHEY_SIMPLEX, LINE_8, LINE_AA},
+        };
+
+        for pose in poses.into_iter() {
+            let mut xys = [None; pose::NUM_KEYPOINTS];
+
+            for keypoint in pose.keypoints {
+                if keypoint.score >= threshold && keypoint.kind.is_some() {
+                    let index = keypoint.kind.unwrap().idx()?;
+                    xys[index] = Some(keypoint.point);
+                    opencv::imgproc::circle(
+                        out_frame,
+                        Point2i::new(keypoint.point.x as i32, keypoint.point.y as i32),
+                        6,
+                        Scalar::from((0.0, 255.0, 0.0)),
+                        1,      // thickness
+                        LINE_8, // line_type
+                        0,      // shift
+                    )?;
+                }
+            }
+
+            for (a, b) in pose::KEYPOINT_EDGES {
+                if let (Some(a_point), Some(b_point)) = (xys[a.idx()?], xys[b.idx()?]) {
+                    opencv::imgproc::line(
+                        out_frame,
+                        Point2i::new(a_point.x as i32, a_point.y as i32),
+                        Point2i::new(b_point.x as i32, b_point.y as i32),
+                        Scalar::from((0.0, 255.0, 255.0)),
+                        2,      // thickness
+                        LINE_8, // line_type
+                        0,      // shift
+                    )?;
+                }
             }
         }
-
-        for (a, b) in pose::KEYPOINT_EDGES {
-            if let (Some(a_point), Some(b_point)) = (xys[a.idx()?], xys[b.idx()?]) {
-                opencv::imgproc::line(
-                    out_frame,
-                    Point2i::new(a_point.x as i32, a_point.y as i32),
-                    Point2i::new(b_point.x as i32, b_point.y as i32),
-                    Scalar::from((0.0, 255.0, 255.0)),
-                    2,      // thickness
-                    LINE_8, // line_type
-                    0,      // shift
-                )?;
-            }
-        }
+        let width = out_frame.cols();
+        opencv::imgproc::put_text(
+            out_frame,
+            &fps_text,
+            Point2i::new(width / 2, 15),
+            FONT_HERSHEY_SIMPLEX,
+            0.5,
+            Scalar::from((38.0, 0.0, 255.0)),
+            1,       // thickness
+            LINE_AA, // line_type
+            false,   // bottom_left_origin
+        )?;
+        opencv::highgui::imshow("poses", out_frame)?;
     }
-
-    opencv::imgproc::put_text(
-        out_frame,
-        &format!(
-            "Model FPS: {:.1}",
-            nframes as f64 / timing.inference.as_secs_f64()
-        ),
-        Point2i::new(i32::from(width) / 2, 15),
-        FONT_HERSHEY_SIMPLEX,
-        0.5,
-        Scalar::from((38.0, 0.0, 255.0)),
-        1,       // thickness
-        LINE_AA, // line_type
-        false,   // bottom_left_origin
-    )?;
-    opencv::imgproc::put_text(
-        out_frame,
-        &format!(
-            "Cam FPS: {:.1}",
-            nframes as f64 / frame_duration.as_secs_f64()
-        ),
-        Point2i::new(i32::from(width) / 2, 30),
-        FONT_HERSHEY_SIMPLEX,
-        0.5,
-        Scalar::from((38.0, 0.0, 255.0)),
-        1,       // thickness
-        LINE_AA, // line_type
-        false,   // bottom_left_origin
-    )?;
-    opencv::highgui::imshow("poses", out_frame)?;
     Ok(())
 }
 
-#[cfg(target_arch = "aarch64")]
-fn draw_poses(
-    _poses: Vec<pose::Pose>,
-    _threshold: f32,
-    _timing: engine::Timing,
-    _out_frame: &mut Mat,
-    _frame_duration: Duration,
-    _nframes: usize,
-    _width: u16,
-) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(feature = "gui")]
 fn wait_q(delay_ms: i32) -> Result<bool> {
     const Q_KEY: u8 = b'q';
     Ok(opencv::highgui::wait_key(delay_ms)? != i32::from(Q_KEY))
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(not(feature = "gui"))]
 fn wait_q(_delay_ms: i32) -> Result<bool> {
     Ok(true)
 }
@@ -193,6 +179,12 @@ fn main() -> Result<()> {
     let mut nframes = 0;
     let mut frame_duration = Default::default();
 
+    let pb_model_cam_fps = ProgressBar::new_spinner().with_style(
+        ProgressStyle::default_spinner()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+            .template("{prefix:.bold.dim} {spinner} {wide_msg}"),
+    );
+
     while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")? {
         let frame_start = Instant::now();
         capture.read(&mut in_frame)?;
@@ -216,10 +208,8 @@ fn main() -> Result<()> {
             &mut out_frame,
             frame_duration,
             nframes,
-            opt.width,
+            &pb_model_cam_fps,
         )?;
-        #[cfg(not(target_arch = "aarch64"))]
-        opencv::highgui::imshow("poses", &out_frame)?;
     }
     Ok(())
 }
