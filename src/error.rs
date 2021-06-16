@@ -72,6 +72,7 @@ pub(crate) enum Error {
     #[error("failed to create edgetpu delegate: got null pointer")]
     CreateEdgeTpuDelegate,
 
+    #[cfg(feature = "posenet_decoder")]
     #[error("failed to crate posenet decoder delegate")]
     CreatePosenetDecoderDelegate,
 

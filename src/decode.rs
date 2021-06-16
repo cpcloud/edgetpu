@@ -25,8 +25,8 @@ pub(crate) trait Decoder {
         let expected_output_tensors = self.expected_output_tensors();
         if output_tensor_count != expected_output_tensors {
             Err(Error::GetExpectedNumOutputs(
-                output_tensor_count,
                 expected_output_tensors,
+                output_tensor_count,
             ))
         } else {
             Ok(())
@@ -34,9 +34,11 @@ pub(crate) trait Decoder {
     }
 }
 
+#[cfg(feature = "posenet_decoder")]
 #[derive(Debug, Clone, Copy, Default, structopt::StructOpt)]
 pub(crate) struct PosenetDecoder {}
 
+#[cfg(feature = "posenet_decoder")]
 impl Decoder for PosenetDecoder {
     fn expected_output_tensors(&self) -> usize {
         4
@@ -487,11 +489,13 @@ impl Decoder for HandRolledDecoder {
 #[derive(Debug, structopt::StructOpt)]
 pub(crate) enum Decode {
     /// Decode using the builtin PosenetDecoderOp
+    #[cfg(feature = "posenet_decoder")]
     Posenet(PosenetDecoder),
     /// Decode using a hand rolled decoder
     HandRolled(HandRolledDecoder),
 }
 
+#[cfg(feature = "posenet_decoder")]
 impl Default for Decode {
     fn default() -> Self {
         Self::Posenet(PosenetDecoder {})
@@ -501,6 +505,7 @@ impl Default for Decode {
 impl Decoder for Decode {
     fn expected_output_tensors(&self) -> usize {
         match self {
+            #[cfg(feature = "posenet_decoder")]
             Self::Posenet(d) => d.expected_output_tensors(),
             Self::HandRolled(d) => d.expected_output_tensors(),
         }
@@ -512,6 +517,7 @@ impl Decoder for Decode {
         dims: (u16, u16),
     ) -> Result<Vec<pose::Pose>, Error> {
         match self {
+            #[cfg(feature = "posenet_decoder")]
             Self::Posenet(d) => d.decode(interp, dims),
             Self::HandRolled(d) => d.decode(interp, dims),
         }
