@@ -34,7 +34,7 @@ where
     {
         let mut interpreter = tflite::Interpreter::new(model_path)?;
 
-        D::validate_output_tensor_count(interpreter.get_output_tensor_count()?)?;
+        decoder.validate_output_tensor_count(interpreter.get_output_tensor_count()?)?;
         interpreter.allocate_tensors()?;
 
         Ok(Self {
@@ -69,6 +69,12 @@ where
 
     pub(crate) fn detect_poses(&mut self, input: &Mat) -> Result<Vec<pose::Pose>, Error> {
         self.infer(input)?;
-        self.decoder.decode(&mut self.interpreter)
+        self.decoder.decode(
+            &mut self.interpreter,
+            (
+                input.rows().to_u16().unwrap(),
+                input.cols().to_u16().unwrap(),
+            ),
+        )
     }
 }

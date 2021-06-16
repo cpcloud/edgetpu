@@ -12,19 +12,18 @@ gui = []
 anyhow = "1"
 ctrlc = "3"
 indicatif = "0.16"
-ndarray = "0.15.2"
+ndarray = "0.15"
 num-derive = "0.3"
 num-traits = "0.2"
-opencv = { version = "0.53.0", features = ["clang-runtime"] }
-structopt = "0.3.21"
-thiserror = "1"
+opencv = { version = "0.53", features = ["clang-runtime"] }
 ordered-float = "2"
-itertools = "0.10"
+structopt = "0.3"
+thiserror = "1"
 
 [build-dependencies]
 anyhow = "1"
-bindgen = "0.58.1"
-pkg-config = "0.3.19"
+bindgen = "0.58"
+pkg-config = "0.3"
 
 [profile.release]
 lto = true
