@@ -11,6 +11,10 @@ use opencv::{
 };
 use std::{
     path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 use structopt::StructOpt;
@@ -81,11 +85,10 @@ fn draw_poses(
                 }
             }
         }
-        let width = out_frame.cols();
         opencv::imgproc::put_text(
             out_frame,
             &fps_text,
-            Point2i::new(width / 2, 15),
+            Point2i::new(0, 15),
             FONT_HERSHEY_SIMPLEX,
             0.5,
             Scalar::from((38.0, 0.0, 255.0)),
@@ -185,7 +188,17 @@ fn main() -> Result<()> {
             .template("{prefix:.bold.dim} {spinner} {wide_msg}"),
     );
 
-    while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")? {
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")?
+        && running.load(Ordering::SeqCst)
+    {
         let frame_start = Instant::now();
         capture.read(&mut in_frame)?;
         frame_duration += frame_start.elapsed();
