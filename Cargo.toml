@@ -9,14 +9,15 @@ default = []
 gui = []
 
 [dependencies]
-structopt = "0.3.21"
 anyhow = "1.0.40"
-opencv = { version = "0.53.0", features = ["clang-runtime"] }
-thiserror = "1"
+ctrlc = "3"
+indicatif = "0.16"
 ndarray = "0.15.2"
 num-derive = "0.3"
 num-traits = "0.2"
-indicatif = "0.16"
+opencv = { version = "0.53.0", features = ["clang-runtime"] }
+structopt = "0.3.21"
+thiserror = "1"
 
 [build-dependencies]
 anyhow = "1"
