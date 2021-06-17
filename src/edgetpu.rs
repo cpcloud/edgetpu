@@ -32,8 +32,8 @@ impl<'parent> Device<'parent> {
                         0,
                     )
                 },
-                || Error::CreateEdgeTpuDelegate,
-            )?,
+            )
+            .ok_or(Error::CreateEdgeTpuDelegate)?,
             |delegate| unsafe { tflite_sys::edgetpu_free_delegate(delegate) },
         ))
     }
@@ -45,9 +45,8 @@ impl Devices {
         let devices = check_null_mut(
             // SAFETY: len is guaranteed to point to valid data (and is checked by the implementation)
             unsafe { tflite_sys::edgetpu_list_devices(&mut len) },
-            || Error::ListDevices,
-        )?;
-
+        )
+        .ok_or(Error::ListDevices)?;
         Ok(Self { devices, len })
     }
 

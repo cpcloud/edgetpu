@@ -26,10 +26,9 @@ impl Model {
         let path_ref = path.as_ref();
         let path_bytes = path_to_c_string(path_ref)?;
         // # SAFETY: path_bytes.as_ptr() is guaranteed to be valid
-        let model = check_null_mut(
-            unsafe { tflite_sys::TfLiteModelCreateFromFile(path_bytes.as_ptr()) },
-            || Error::GetModelFromFile,
-        )?;
+        let model =
+            check_null_mut(unsafe { tflite_sys::TfLiteModelCreateFromFile(path_bytes.as_ptr()) })
+                .ok_or(Error::GetModelFromFile)?;
 
         Ok(Self { model })
     }

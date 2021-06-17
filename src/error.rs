@@ -64,19 +64,19 @@ pub(crate) enum Error {
     GetMatData(#[source] opencv::Error),
 }
 
-pub(crate) fn check_null_mut<T>(ptr: *mut T, e: impl FnOnce() -> Error) -> Result<*mut T, Error> {
+pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {
     if ptr.is_null() {
-        Err(e())
+        None
     } else {
-        Ok(ptr)
+        Some(ptr)
     }
 }
 
-pub(crate) fn check_null<T>(ptr: *const T, e: impl FnOnce() -> Error) -> Result<*const T, Error> {
+pub(crate) fn check_null<T>(ptr: *const T) -> Option<*const T> {
     if ptr.is_null() {
-        Err(e())
+        None
     } else {
-        Ok(ptr)
+        Some(ptr)
     }
 }
 

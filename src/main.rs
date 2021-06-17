@@ -41,7 +41,7 @@ fn draw_poses(
         nframes / frame_duration.as_secs_f64()
     );
 
-    pb_model_cam_fps.set_message(fps_text.clone());
+    pb_model_cam_fps.set_message(fps_text);
     pb_model_cam_fps.inc(1);
 
     #[cfg(feature = "gui")]

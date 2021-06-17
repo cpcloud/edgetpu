@@ -1,7 +1,7 @@
 use crate::{
     edgetpu::Devices,
     error::{check_null, check_null_mut, tflite_status_to_result, Error},
-    tflite::{Delegate, Model, Tensor},
+    tflite::{Delegate, Model, Options, Tensor},
     tflite_sys,
 };
 use std::{convert::TryFrom, path::Path};
@@ -21,10 +21,11 @@ extern "C" {
 
 pub(crate) struct Interpreter {
     interpreter: *mut tflite_sys::TfLiteInterpreter,
-    options: *mut tflite_sys::TfLiteInterpreterOptions,
-    // these fields are never accessed, they are only here to ensure that
-    // resources created during interpreter construction live as long as the
-    // interpreter
+    // These fields are never accessed.
+    //
+    // They are here to ensure that resources created during interpreter construction
+    // live as long as the interpreter.
+    _options: Options,
     _devices: Devices,
     _model: Model,
     _delegates: Vec<Delegate>,
@@ -35,11 +36,7 @@ impl Interpreter {
     where
         P: AsRef<Path>,
     {
-        let options = check_null_mut(
-            // SAFETY: we check nullness, API is guaranteed to return a valid pointer
-            unsafe { tflite_sys::TfLiteInterpreterOptionsCreate() },
-            || Error::CreateOptions,
-        )?;
+        let mut options = Options::new()?;
 
         let devices = Devices::new()?;
         if devices.is_empty() {
@@ -49,7 +46,7 @@ impl Interpreter {
         let mut delegates = Vec::with_capacity(1 + devices.len());
 
         // add posenet decoder
-        let posenet_decoder_delegate = Delegate::new(
+        let mut posenet_decoder_delegate = Delegate::new(
             check_null_mut(
                 // SAFETY: the delegate is guaranteed to be valid
                 unsafe {
@@ -60,50 +57,34 @@ impl Interpreter {
                         None,
                     )
                 },
-                || Error::CreatePosenetDecoderDelegate,
-            )?,
+            )
+            .ok_or(Error::CreatePosenetDecoderDelegate)?,
             |delegate| unsafe { tflite_plugin_destroy_delegate(delegate) },
         );
 
-        // SAFETY: options and posenet_delegate are both valid pointers
-        unsafe {
-            tflite_sys::TfLiteInterpreterOptionsAddDelegate(
-                options,
-                posenet_decoder_delegate.as_mut_ptr(),
-            );
-        }
+        options.add_delegate(&mut posenet_decoder_delegate);
 
         delegates.push(posenet_decoder_delegate);
 
         for device in devices.iter() {
-            let edgetpu_delegate = device.delegate()?;
+            let mut edgetpu_delegate = device.delegate()?;
 
-            // SAFETY: options and edgetpu_delegate are both valid pointers
-            unsafe {
-                tflite_sys::TfLiteInterpreterOptionsAddDelegate(
-                    options,
-                    edgetpu_delegate.as_mut_ptr(),
-                );
-            }
-
+            options.add_delegate(&mut edgetpu_delegate);
             delegates.push(edgetpu_delegate);
         }
 
-        // SAFETY: options is a valid pointer
-        unsafe {
-            tflite_sys::TfLiteInterpreterOptionsSetEnableDelegateFallback(options, false);
-        }
+        options.set_enable_delegate_fallback(false);
 
         let mut model = Model::new(path)?;
         let interpreter = check_null_mut(
             // SAFETY: model and options are both valid pointers
-            unsafe { tflite_sys::TfLiteInterpreterCreate(model.as_mut_ptr(), options) },
-            || Error::CreateInterpreter,
-        )?;
+            unsafe { tflite_sys::TfLiteInterpreterCreate(model.as_mut_ptr(), options.as_ptr()) },
+        )
+        .ok_or(Error::CreateInterpreter)?;
 
         Ok(Self {
             interpreter,
-            options,
+            _options: options,
             _devices: devices,
             _model: model,
             _delegates: delegates,
@@ -126,11 +107,12 @@ impl Interpreter {
 
     pub(crate) fn get_input_tensor(&mut self, index: usize) -> Result<Tensor<'_>, Error> {
         let index = i32::try_from(index).map_err(Error::GetFfiIndex)?;
-        let pointer = check_null_mut(
-            unsafe { tflite_sys::TfLiteInterpreterGetInputTensor(self.interpreter, index) },
-            || Error::GetInputTensor,
-        )?;
-        Tensor::new(pointer)
+        Tensor::new(
+            check_null_mut(unsafe {
+                tflite_sys::TfLiteInterpreterGetInputTensor(self.interpreter, index)
+            })
+            .ok_or(Error::GetInputTensor)?,
+        )
     }
 
     pub(crate) fn get_output_tensor_count(&self) -> usize {
@@ -142,21 +124,20 @@ impl Interpreter {
 
     pub(crate) fn get_output_tensor(&self, index: usize) -> Result<Tensor<'_>, Error> {
         let index = i32::try_from(index).map_err(Error::GetFfiIndex)?;
-        let pointer = check_null(
-            unsafe { tflite_sys::TfLiteInterpreterGetOutputTensor(self.interpreter, index) },
-            || Error::GetOutputTensor,
-        )?;
-        Tensor::new(pointer as _)
+        Tensor::new(
+            check_null(unsafe {
+                tflite_sys::TfLiteInterpreterGetOutputTensor(self.interpreter, index)
+            })
+            .ok_or(Error::GetOutputTensor)? as _,
+        )
     }
 }
 
 impl Drop for Interpreter {
     fn drop(&mut self) {
-        // # SAFETY: call accepts null pointers and self.interpreter/self.options are guaranteed to
-        // be valid.
+        // # SAFETY: self.interpreter is guaranteed to be valid.
         unsafe {
             tflite_sys::TfLiteInterpreterDelete(self.interpreter);
-            tflite_sys::TfLiteInterpreterOptionsDelete(self.options);
         };
     }
 }
