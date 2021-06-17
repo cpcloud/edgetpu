@@ -2,19 +2,17 @@ use crate::{
     decode::Decoder,
     error::Error,
     pose,
-    pose::{self, Keypoint, KeypointKind, Pose},
-    tflite,
+    tflite::{self, TensorElement},
 };
-use ndarray::Axis;
-use num_traits::cast::{FromPrimitive, ToPrimitive};
+use num_traits::cast::ToPrimitive;
 use opencv::{core::Mat, prelude::*};
 use std::{
     path::Path,
     time::{Duration, Instant},
 };
 
-pub(crate) struct Engine<D> {
-    interpreter: tflite::Interpreter,
+pub(crate) struct Engine<I, O, D> {
+    interpreter: tflite::Interpreter<I, O>,
     decoder: D,
     pub(crate) timing: Timing,
 }
@@ -24,7 +22,7 @@ pub(crate) struct Timing {
     pub(crate) inference: Duration,
 }
 
-impl<D> Engine<D>
+impl<I, O, D> Engine<I, O, D>
 where
     D: Decoder,
 {
@@ -44,7 +42,10 @@ where
         })
     }
 
-    fn infer(&mut self, input: &Mat) -> Result<(), Error> {
+    fn infer(&mut self, input: &Mat) -> Result<(), Error>
+    where
+        I: TensorElement,
+    {
         let step = input.step1(0).map_err(Error::GetChannels)?
             * input.elem_size1().map_err(Error::GetElemSize1)?;
         let rows = input.rows().to_usize().ok_or(Error::ConvertRowsToUsize)?;
@@ -67,7 +68,11 @@ where
         Ok(())
     }
 
-    pub(crate) fn detect_poses(&mut self, input: &Mat) -> Result<Vec<pose::Pose>, Error> {
+    pub(crate) fn detect_poses(&mut self, input: &Mat) -> Result<Vec<pose::Pose>, Error>
+    where
+        I: TensorElement,
+        O: TensorElement,
+    {
         self.infer(input)?;
         self.decoder.decode(
             &mut self.interpreter,

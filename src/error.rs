@@ -111,6 +111,12 @@ pub(crate) enum Error {
         (usize, usize, usize, usize),
         [usize; 4],
     ),
+
+    #[error("pointer to tensor was null when inferring type")]
+    GetTensorForType,
+
+    #[error("unknown tensor element type: {0:?}")]
+    GetTensorType(tflite_sys::TfLiteType),
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {

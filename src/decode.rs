@@ -1,7 +1,7 @@
 use crate::{
     error::Error,
     pose::{self, Keypoint, KeypointKind, Pose},
-    tflite,
+    tflite::{self, TensorElement, TypedTensor},
 };
 use ndarray::{
     array, s, Array1, Array2, Array3, ArrayView1, ArrayView2, ArrayView3, ArrayView4, Axis,
@@ -14,11 +14,13 @@ pub(crate) trait Decoder {
     fn expected_output_tensors(&self) -> usize;
 
     /// Decode poses into a Vec of Pose.
-    fn decode(
+    fn decode<I, O>(
         &self,
-        interp: &mut tflite::Interpreter,
+        interp: &mut tflite::Interpreter<I, O>,
         dims: (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error>;
+    ) -> Result<Vec<pose::Pose>, Error>
+    where
+        O: TensorElement;
 
     /// Validate that the model has the expected number of output tensors.
     fn validate_output_tensor_count(&self, output_tensor_count: usize) -> Result<(), Error> {
@@ -44,11 +46,14 @@ impl Decoder for PosenetDecoder {
         4
     }
 
-    fn decode(
+    fn decode<I, O>(
         &self,
-        interp: &mut tflite::Interpreter,
+        interp: &mut tflite::Interpreter<I, O>,
         (_width, _height): (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error> {
+    ) -> Result<Vec<pose::Pose>, Error>
+    where
+        O: TensorElement,
+    {
         // construct the output tensors
         let pose_keypoints = interp.get_output_tensor(0)?;
         let pose_keypoints = pose_keypoints.as_ndarray(
@@ -424,11 +429,14 @@ impl Decoder for HandRolledDecoder {
         3
     }
 
-    fn decode(
+    fn decode<I, O>(
         &self,
-        interp: &mut tflite::Interpreter,
+        interp: &mut tflite::Interpreter<I, O>,
         (frame_width, frame_height): (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error> {
+    ) -> Result<Vec<pose::Pose>, Error>
+    where
+        O: TensorElement,
+    {
         let output_stride = u16::from(self.output_stride);
         let height = usize::from(1 + (frame_height - 1) / output_stride);
         let width = usize::from(1 + (frame_width - 1) / output_stride);
@@ -436,7 +444,7 @@ impl Decoder for HandRolledDecoder {
         let heatmaps = interp.get_output_tensor(0)?;
         let heatmaps = heatmaps
             .as_ndarray(*(height, width, pose::NUM_KEYPOINTS).into_shape().raw_dim())?
-            .mapv(|v| 1.0_f32 / (1.0_f32 + (-v).exp()));
+            .mapv(|v: O| 1.0_f32 / (1.0_f32 + (-v).exp()));
 
         let offsets = interp.get_output_tensor(1)?;
         let offsets = offsets.as_ndarray(
@@ -511,11 +519,14 @@ impl Decoder for Decode {
         }
     }
 
-    fn decode(
+    fn decode<I, O>(
         &self,
-        interp: &mut tflite::Interpreter,
+        interp: &mut tflite::Interpreter<I, O>,
         dims: (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error> {
+    ) -> Result<Vec<pose::Pose>, Error>
+    where
+        O: TensorElement,
+    {
         match self {
             #[cfg(feature = "posenet_decoder")]
             Self::Posenet(d) => d.decode(interp, dims),

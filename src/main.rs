@@ -181,7 +181,7 @@ fn main() -> Result<()> {
     let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)?.to_mat()?;
     let out_frame_size = out_frame.size()?;
 
-    let mut engine = engine::Engine::new(opt.model, opt.decoder)?;
+    let mut engine = engine::Engine::<u8, f32, _>::new(opt.model, opt.decoder)?;
 
     let mut nframes = 0;
     let mut frame_duration = Default::default();
