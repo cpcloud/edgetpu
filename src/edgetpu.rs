@@ -1,5 +1,6 @@
 use crate::{
     error::{check_null_mut, Error},
+    tflite::Delegate,
     tflite_sys,
 };
 
@@ -19,19 +20,22 @@ impl<'parent> Device<'parent> {
         Self { device }
     }
 
-    pub(crate) fn delegate(&self) -> Result<*mut tflite_sys::TfLiteDelegate, Error> {
-        check_null_mut(
-            // SAFETY: inputs are all valid, and the return value is checked for null
-            unsafe {
-                tflite_sys::edgetpu_create_delegate(
-                    (*self.device).type_,
-                    std::ptr::null(),
-                    std::ptr::null(),
-                    0,
-                )
-            },
-            || Error::CreateEdgeTpuDelegate,
-        )
+    pub(crate) fn delegate(&self) -> Result<Delegate, Error> {
+        Ok(Delegate::new(
+            check_null_mut(
+                // SAFETY: inputs are all valid, and the return value is checked for null
+                unsafe {
+                    tflite_sys::edgetpu_create_delegate(
+                        (*self.device).type_,
+                        std::ptr::null(),
+                        std::ptr::null(),
+                        0,
+                    )
+                },
+                || Error::CreateEdgeTpuDelegate,
+            )?,
+            |delegate| unsafe { tflite_sys::edgetpu_free_delegate(delegate) },
+        ))
     }
 }
 
