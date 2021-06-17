@@ -2,7 +2,7 @@ use crate::{
     error::{tflite_status_to_result, Error},
     tflite_sys,
 };
-use ndarray::{ArrayView, Dimension};
+use ndarray::{ArrayView, IntoDimension};
 use std::{convert::TryFrom, marker::PhantomData};
 
 fn dim(tensor: *const tflite_sys::TfLiteTensor, dim_index: usize) -> usize {
@@ -41,11 +41,12 @@ impl<'a> Tensor<'a> {
         unsafe { std::slice::from_raw_parts((*self.tensor).data.f, self.len) }
     }
 
-    pub(crate) fn as_ndarray<D>(&'a self, dims: D) -> Result<ArrayView<'a, f32, D>, Error>
+    pub(crate) fn as_ndarray<I>(&'a self, dims: I) -> Result<ArrayView<'a, f32, I::Dim>, Error>
     where
-        D: Dimension,
+        I: IntoDimension,
     {
-        ArrayView::from_shape(dims, self.as_slice()).map_err(Error::ConstructArrayView)
+        ArrayView::from_shape(dims.into_dimension(), self.as_slice())
+            .map_err(Error::ConstructArrayView)
     }
 
     pub(crate) fn dim(&self, dim_index: usize) -> usize {

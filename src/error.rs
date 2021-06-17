@@ -62,6 +62,9 @@ pub(crate) enum Error {
 
     #[error("failed to get Mat data")]
     GetMatData(#[source] opencv::Error),
+
+    #[error("failed to convert num poses value to usize")]
+    ConvertNumPosesToUSize,
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {

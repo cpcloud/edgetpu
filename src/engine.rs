@@ -3,7 +3,6 @@ use crate::{
     pose::{self, Keypoint, KeypointKind, Pose},
     tflite,
 };
-use ndarray::ShapeBuilder;
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use opencv::{core::Mat, prelude::*};
 use std::{
@@ -59,24 +58,19 @@ impl Engine {
 
         // construct the output tensors
         let pose_keypoints = self.interpreter.get_output_tensor(0)?;
-        let pose_keypoints = pose_keypoints.as_ndarray(
-            *(
-                pose_keypoints.dim(1),
-                pose_keypoints.dim(2),
-                pose_keypoints.dim(3),
-            )
-                .into_shape()
-                .raw_dim(),
-        )?;
+        let pose_keypoints = pose_keypoints.as_ndarray((
+            pose_keypoints.dim(1),
+            pose_keypoints.dim(2),
+            pose_keypoints.dim(3),
+        ))?;
         let keypoint_scores = self.interpreter.get_output_tensor(1)?;
-        let keypoint_scores = keypoint_scores.as_ndarray(
-            *(keypoint_scores.dim(1), keypoint_scores.dim(2))
-                .into_shape()
-                .raw_dim(),
-        )?;
+        let keypoint_scores =
+            keypoint_scores.as_ndarray((keypoint_scores.dim(1), keypoint_scores.dim(2)))?;
         let pose_scores = self.interpreter.get_output_tensor(2)?;
-        let pose_scores = pose_scores.as_ndarray(*pose_scores.dim(1).into_shape().raw_dim())?;
-        let nposes = self.interpreter.get_output_tensor(3)?.as_slice()[0] as usize;
+        let pose_scores = pose_scores.as_ndarray(pose_scores.dim(1))?;
+        let nposes = self.interpreter.get_output_tensor(3)?.as_slice()[0]
+            .to_usize()
+            .ok_or(Error::ConvertNumPosesToUSize)?;
 
         // move poses into a more useful structure
         let mut poses = Vec::with_capacity(nposes);
