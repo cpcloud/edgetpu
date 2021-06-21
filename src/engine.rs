@@ -32,7 +32,7 @@ where
     {
         let mut interpreter = tflite::Interpreter::new(model_path)?;
 
-        decoder.validate_output_tensor_count(interpreter.get_output_tensor_count()?)?;
+        decoder.validate_output_tensor_count(interpreter.get_output_tensor_count())?;
         interpreter.allocate_tensors()?;
 
         Ok(Self {
@@ -51,15 +51,12 @@ where
         let rows = input.rows().to_usize().ok_or(Error::ConvertRowsToUsize)?;
         let num_elements = step * rows;
 
-        // SAFETY: raw_data is a valid pointer, points to data of length `number_of_elements`
-        // and lives <= the lifetime of `input`
         let raw_data = input.data().map_err(Error::GetMatData)? as _;
-        let bytes = unsafe { std::slice::from_raw_parts(raw_data, num_elements) };
 
         // copy the bytes into the input tensor
         self.interpreter
             .get_input_tensor(0)?
-            .copy_from_raw_buffer(raw_data, number_of_elements)?;
+            .copy_from_raw_buffer(raw_data, num_elements)?;
 
         // run inference
         let start_inference = Instant::now();
