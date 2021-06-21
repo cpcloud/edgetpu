@@ -17,6 +17,7 @@ pkgs.mkShell {
     abseil-cpp
     cargo-edit
     cargo-udeps
+    cargo-bloat
     clang_10
     flatbuffers
     libcoral
