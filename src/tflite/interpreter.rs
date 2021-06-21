@@ -4,12 +4,7 @@ use crate::{
     tflite::{Delegate, Model, Options, Tensor},
     tflite_sys,
 };
-use std::{
-    convert::TryFrom,
-    ffi::{CStr, CString},
-    marker::PhantomData,
-    path::Path,
-};
+use std::{convert::TryFrom, ffi::CStr, marker::PhantomData, path::Path};
 
 extern "C" {
     #[link(name = "posenet_decoder")]
@@ -41,7 +36,7 @@ pub(crate) struct Interpreter<I, O> {
 unsafe extern "C" fn log_error(msg: *const std::os::raw::c_char) {
     // SAFETY: `msg` is valid for the lifetime of the call, and doesn't
     // change during that lifetime
-    eprintln!("{}", CStr::from_ptr(msg));
+    eprintln!("{:?}", CStr::from_ptr(msg));
 }
 
 impl<I, O> Interpreter<I, O> {
@@ -59,28 +54,31 @@ impl<I, O> Interpreter<I, O> {
         let mut delegates = Vec::with_capacity(1 + devices.len());
 
         // add posenet decoder
-        let mut posenet_decoder_delegate = Delegate::new(
-            check_null_mut(
-                // SAFETY: the delegate is guaranteed to be valid
-                unsafe {
-                    tflite_plugin_create_delegate(
-                        std::ptr::null_mut(),
-                        std::ptr::null_mut(),
-                        0,
-                        Some(log_error),
-                    )
-                },
-            )
-            .ok_or(Error::CreatePosenetDecoderDelegate)?,
-            |delegate| unsafe { tflite_plugin_destroy_delegate(delegate) },
-        )?;
+        #[cfg(feature = "posenet_decoder")]
+        {
+            let mut posenet_decoder_delegate = Delegate::new(
+                check_null_mut(
+                    // SAFETY: the delegate is guaranteed to be valid
+                    unsafe {
+                        tflite_plugin_create_delegate(
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            0,
+                            Some(log_error),
+                        )
+                    },
+                )
+                .ok_or(Error::CreatePosenetDecoderDelegate)?,
+                |delegate| unsafe { tflite_plugin_destroy_delegate(delegate) },
+            )?;
 
-        options.add_delegate(&mut posenet_decoder_delegate);
+            options.add_delegate(&mut posenet_decoder_delegate);
 
-        delegates.push(posenet_decoder_delegate);
+            delegates.push(posenet_decoder_delegate);
+        }
 
-        for device in devices.iter() {
-            let mut edgetpu_delegate = device.delegate()?;
+        for r#type in devices.types() {
+            let mut edgetpu_delegate = Delegate::try_from(r#type?)?;
 
             options.add_delegate(&mut edgetpu_delegate);
             delegates.push(edgetpu_delegate);
