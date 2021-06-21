@@ -72,7 +72,7 @@ fn draw_poses(
                 }
             }
 
-            for (a, b) in pose::KEYPOINT_EDGES {
+            for (a, b) in pose::constants::KEYPOINT_EDGES {
                 if let (Some(a_point), Some(b_point)) = (xys[a.idx()?], xys[b.idx()?]) {
                     opencv::imgproc::line(
                         out_frame,
@@ -181,7 +181,7 @@ fn main() -> Result<()> {
     let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)?.to_mat()?;
     let out_frame_size = out_frame.size()?;
 
-    let mut engine = engine::Engine::<u8, f32, _>::new(opt.model, opt.decoder)?;
+    let mut engine = engine::Engine::new(opt.model, opt.decoder)?;
 
     let mut nframes = 0;
     let mut frame_duration = Default::default();

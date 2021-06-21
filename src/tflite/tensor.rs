@@ -1,47 +1,55 @@
 use crate::{
-    error::{tflite_status_to_result, Error},
+    error::{check_null, tflite_status_to_result, Error},
     tflite_sys,
 };
 use ndarray::{ArrayView, IntoDimension};
 use std::{convert::TryFrom, marker::PhantomData};
 
-fn dim(tensor: *const tflite_sys::TfLiteTensor, dim_index: usize) -> usize {
+fn dim(tensor: *const tflite_sys::TfLiteTensor, index: usize) -> Result<usize, Error> {
+    assert!(!tensor.is_null());
+    let dims = num_dims(tensor)?;
+    if index >= dims {
+        return Err(Error::GetDim(index, dims));
+    }
+
+    let index = i32::try_from(index).map_err(Error::ConvertUSizeToI32Index)?;
     // # SAFETY: self.tensor is guaranteed to be valid
-    usize::try_from(unsafe {
-        tflite_sys::TfLiteTensorDim(
-            tensor,
-            i32::try_from(dim_index).expect("failed to convert dim_index usize to i32"),
-        )
-    })
-    .expect("failed to convert dim i32 to usize")
+    usize::try_from(unsafe { tflite_sys::TfLiteTensorDim(tensor, index) })
+        .map_err(Error::ConvertDimI32ToUSize)
 }
 
-fn num_dims(tensor: *const tflite_sys::TfLiteTensor) -> usize {
+fn num_dims(tensor: *const tflite_sys::TfLiteTensor) -> Result<usize, Error> {
+    assert!(!tensor.is_null());
     // # SAFETY: self.tensor is guaranteed to be valid
-    usize::try_from(unsafe { tflite_sys::TfLiteTensorNumDims(tensor) })
-        .expect("failed to convert dim i32 to usize")
+    usize::try_from(unsafe { tflite_sys::TfLiteTensorNumDims(tensor) }).map_err(Error::GetNumDims)
 }
 
-pub(crate) struct Tensor<'a> {
+/// A safe wrapper around TfLiteTensor.
+pub(crate) struct Tensor<'interp> {
     tensor: *const tflite_sys::TfLiteTensor,
     len: usize,
-    _p: PhantomData<&'a ()>,
+    // Data are owned by the interpreter that allocated the tensor.
+    _p: PhantomData<&'interp ()>,
 }
 
-impl<'a> Tensor<'a> {
+impl<'interp> Tensor<'interp> {
     pub(super) fn new(tensor: *const tflite_sys::TfLiteTensor) -> Result<Self, Error> {
+        let tensor = check_null(tensor).ok_or(Error::CreateTensor)?;
         Ok(Self {
             tensor,
-            len: (0..num_dims(tensor as _)).fold(1, |size, d| size * dim(tensor as _, d)),
+            len: (0..num_dims(tensor)?).try_fold(1, |size, d| Ok(size * dim(tensor, d)?))?,
             _p: Default::default(),
         })
     }
 
-    pub(crate) fn as_slice(&'a self) -> &'a [f32] {
+    pub(crate) fn as_slice(&'interp self) -> &'interp [f32] {
         unsafe { std::slice::from_raw_parts((*self.tensor).data.f, self.len) }
     }
 
-    pub(crate) fn as_ndarray<I>(&'a self, dims: I) -> Result<ArrayView<'a, f32, I::Dim>, Error>
+    pub(crate) fn as_ndarray<I>(
+        &'interp self,
+        dims: I,
+    ) -> Result<ArrayView<'interp, f32, I::Dim>, Error>
     where
         I: IntoDimension,
     {
@@ -49,11 +57,13 @@ impl<'a> Tensor<'a> {
             .map_err(Error::ConstructArrayView)
     }
 
-    pub(crate) fn dim(&self, dim_index: usize) -> usize {
-        dim(self.tensor as _, dim_index)
+    #[cfg(feature = "posenet_decoder")]
+    pub(crate) fn dim(&self, index: usize) -> Result<usize, Error> {
+        dim(self.tensor, index)
     }
 
     pub(crate) fn copy_from_raw_buffer(&mut self, buf: *const u8, len: usize) -> Result<(), Error> {
+        assert!(!buf.is_null());
         // SAFETY: buf is guaranteed to be valid and of len buf.len()
         tflite_status_to_result(
             unsafe { tflite_sys::TfLiteTensorCopyFromBuffer(self.tensor as _, buf.cast(), len) },

@@ -1,6 +1,3 @@
-#[cfg(feature = "gui")]
-use crate::error::Error;
-#[cfg(feature = "gui")]
 use num_traits::cast::ToPrimitive;
 
 #[derive(Debug, Copy, Clone, num_derive::FromPrimitive, num_derive::ToPrimitive)]
@@ -24,10 +21,10 @@ pub(crate) enum KeypointKind {
     RightAnkle,
 }
 
-#[cfg(feature = "gui")]
 impl KeypointKind {
-    pub(crate) fn idx(self) -> Result<usize, Error> {
-        self.to_usize().ok_or(Error::KeypointVariantToUSize(self))
+    pub(crate) fn idx(self) -> Result<usize, crate::error::Error> {
+        self.to_usize()
+            .ok_or(crate::error::Error::KeypointVariantToUSize(self))
     }
 }
 
@@ -48,10 +45,9 @@ pub(crate) struct Pose {
 }
 
 pub(crate) mod constants {
-    use super::KeypointKind;
+    use crate::pose::KeypointKind;
 
     pub(crate) const LOCAL_MAXIMUM_RADIUS: usize = 1;
-
     pub(crate) const POSE_CHAIN: [(KeypointKind, KeypointKind); 16] = [
         (KeypointKind::Nose, KeypointKind::LeftEye),
         (KeypointKind::LeftEye, KeypointKind::LeftEar),
@@ -70,27 +66,27 @@ pub(crate) mod constants {
         (KeypointKind::RightHip, KeypointKind::RightKnee),
         (KeypointKind::RightKnee, KeypointKind::RightAnkle),
     ];
-}
 
-#[cfg(feature = "gui")]
-pub(crate) const KEYPOINT_EDGES: [(KeypointKind, KeypointKind); 19] = [
-    (KeypointKind::Nose, KeypointKind::LeftEye),
-    (KeypointKind::Nose, KeypointKind::RightEye),
-    (KeypointKind::Nose, KeypointKind::LeftEar),
-    (KeypointKind::Nose, KeypointKind::RightEar),
-    (KeypointKind::LeftEar, KeypointKind::LeftEye),
-    (KeypointKind::RightEar, KeypointKind::RightEye),
-    (KeypointKind::LeftEye, KeypointKind::RightEye),
-    (KeypointKind::LeftShoulder, KeypointKind::RightShoulder),
-    (KeypointKind::LeftShoulder, KeypointKind::LeftElbow),
-    (KeypointKind::LeftShoulder, KeypointKind::LeftHip),
-    (KeypointKind::RightShoulder, KeypointKind::RightElbow),
-    (KeypointKind::RightShoulder, KeypointKind::RightHip),
-    (KeypointKind::LeftElbow, KeypointKind::LeftWrist),
-    (KeypointKind::RightElbow, KeypointKind::RightWrist),
-    (KeypointKind::LeftHip, KeypointKind::RightHip),
-    (KeypointKind::LeftHip, KeypointKind::LeftKnee),
-    (KeypointKind::RightHip, KeypointKind::RightKnee),
-    (KeypointKind::LeftKnee, KeypointKind::LeftAnkle),
-    (KeypointKind::RightKnee, KeypointKind::RightAnkle),
-];
+    #[cfg(feature = "gui")]
+    pub(crate) const KEYPOINT_EDGES: [(KeypointKind, KeypointKind); 19] = [
+        (KeypointKind::Nose, KeypointKind::LeftEye),
+        (KeypointKind::Nose, KeypointKind::RightEye),
+        (KeypointKind::Nose, KeypointKind::LeftEar),
+        (KeypointKind::Nose, KeypointKind::RightEar),
+        (KeypointKind::LeftEar, KeypointKind::LeftEye),
+        (KeypointKind::RightEar, KeypointKind::RightEye),
+        (KeypointKind::LeftEye, KeypointKind::RightEye),
+        (KeypointKind::LeftShoulder, KeypointKind::RightShoulder),
+        (KeypointKind::LeftShoulder, KeypointKind::LeftElbow),
+        (KeypointKind::LeftShoulder, KeypointKind::LeftHip),
+        (KeypointKind::RightShoulder, KeypointKind::RightElbow),
+        (KeypointKind::RightShoulder, KeypointKind::RightHip),
+        (KeypointKind::LeftElbow, KeypointKind::LeftWrist),
+        (KeypointKind::RightElbow, KeypointKind::RightWrist),
+        (KeypointKind::LeftHip, KeypointKind::RightHip),
+        (KeypointKind::LeftHip, KeypointKind::LeftKnee),
+        (KeypointKind::RightHip, KeypointKind::RightKnee),
+        (KeypointKind::LeftKnee, KeypointKind::LeftAnkle),
+        (KeypointKind::RightKnee, KeypointKind::RightAnkle),
+    ];
+}

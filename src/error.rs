@@ -17,23 +17,11 @@ pub(crate) enum Error {
     #[error("failed to get input tensor: got null pointer instead")]
     GetInputTensor,
 
-    #[error("failed to convert input tensor count i32 to usize")]
-    ConvertInputTensorCount(#[source] std::num::TryFromIntError),
-
-    #[error("failed to get input tensor at index {0}: only {1} input tensors available")]
-    InputTensorIndex(usize, usize),
-
     #[error("failed to get output tensor: got null pointer instead")]
     GetOutputTensor,
 
-    #[error("failed to convert output tensor count i32 to usize")]
-    ConvertOutputTensorCount(#[source] std::num::TryFromIntError),
-
     #[error("expected {0} output tensors, got {1}")]
     GetExpectedNumOutputs(usize, usize),
-
-    #[error("failed to get output tensor at index {0}: only {1} output tensors available")]
-    OutputTensorIndex(usize, usize),
 
     #[error("failed to convert row count i32 to usize")]
     ConvertRowsToUsize,
@@ -65,7 +53,6 @@ pub(crate) enum Error {
     #[error("failed to create interpreter, got null pointer")]
     CreateInterpreter,
 
-    #[cfg(feature = "gui")]
     #[error("failed to convert keypoint variant to usize: {0:?}")]
     KeypointVariantToUSize(crate::pose::KeypointKind),
 
@@ -84,9 +71,6 @@ pub(crate) enum Error {
 
     #[error("failed to get Mat data")]
     GetMatData(#[source] opencv::Error),
-
-    #[error("failed to convert num poses value to usize")]
-    ConvertNumPosesToUSize,
 
     #[error("failed to construct delegate, got null pointer")]
     ConstructDelegate,
@@ -112,11 +96,24 @@ pub(crate) enum Error {
         [usize; 4],
     ),
 
-    #[error("pointer to tensor was null when inferring type")]
-    GetTensorForType,
+    #[error("failed to convert usize index to i32 index")]
+    ConvertUSizeToI32Index(#[source] std::num::TryFromIntError),
 
-    #[error("unknown tensor element type: {0:?}")]
-    GetTensorType(tflite_sys::TfLiteType),
+    #[error("failed to convert dim i32 to usize")]
+    ConvertDimI32ToUSize(#[source] std::num::TryFromIntError),
+
+    #[error("failed to convert dim i32 to usize")]
+    GetNumDims(#[source] std::num::TryFromIntError),
+
+    #[error("got null pointer when constructing Tensor")]
+    CreateTensor,
+
+    #[cfg(feature = "posenet_decoder")]
+    #[error("failed to convert number of poses to usize")]
+    NumPosesToUSize,
+
+    #[error("dimension index {0} is out of bounds for tensor with dimensions {1}")]
+    GetDim(usize, usize),
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {

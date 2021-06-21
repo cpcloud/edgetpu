@@ -5,7 +5,7 @@ use crate::{
 };
 
 pub(crate) struct Options {
-    options: *mut tflite_sys::TfLiteInterpreterOptions,
+    options: *const tflite_sys::TfLiteInterpreterOptions,
 }
 
 impl Options {
@@ -19,17 +19,24 @@ impl Options {
         })
     }
 
-    pub(super) fn add_delegate(&mut self, delegate: &mut Delegate) {
-        // SAFETY: self.options and delegate are both valid pointers
+    pub(super) fn add_delegate<'a, 'b: 'a>(&'a mut self, delegate: &'b mut Delegate) {
+        // SAFETY: self.options and delegate are both valid pointers. `delegate`
+        // is owned externally and lives at least as long as self.
         unsafe {
-            tflite_sys::TfLiteInterpreterOptionsAddDelegate(self.options, delegate.as_mut_ptr());
+            tflite_sys::TfLiteInterpreterOptionsAddDelegate(
+                self.options as _,
+                delegate.as_mut_ptr(),
+            );
         }
     }
 
     pub(super) fn set_enable_delegate_fallback(&mut self, enable: bool) {
         // SAFETY: self.options is a valid pointer
         unsafe {
-            tflite_sys::TfLiteInterpreterOptionsSetEnableDelegateFallback(self.options, enable);
+            tflite_sys::TfLiteInterpreterOptionsSetEnableDelegateFallback(
+                self.options as _,
+                enable,
+            );
         }
     }
 
@@ -42,7 +49,7 @@ impl Drop for Options {
     fn drop(&mut self) {
         // SAFETY: self.options is guaranteed to be valid
         unsafe {
-            tflite_sys::TfLiteInterpreterOptionsDelete(self.options);
+            tflite_sys::TfLiteInterpreterOptionsDelete(self.options as _);
         }
     }
 }
