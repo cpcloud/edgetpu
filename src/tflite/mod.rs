@@ -2,7 +2,7 @@ mod model;
 pub(crate) use model::Model;
 
 mod tensor;
-pub(crate) use tensor::Tensor;
+pub(crate) use tensor::{Tensor, TensorElement, TypedTensor};
 
 mod delegate;
 pub(crate) use delegate::Delegate;

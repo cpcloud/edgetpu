@@ -4,7 +4,12 @@ use crate::{
     tflite::{Delegate, Model, Options, Tensor},
     tflite_sys,
 };
-use std::{convert::TryFrom, path::Path};
+use std::{
+    convert::TryFrom,
+    ffi::{CStr, CString},
+    marker::PhantomData,
+    path::Path,
+};
 
 extern "C" {
     #[link(name = "posenet_decoder")]
@@ -19,19 +24,27 @@ extern "C" {
     fn tflite_plugin_destroy_delegate(delegate: *mut tflite_sys::TfLiteDelegate);
 }
 
-pub(crate) struct Interpreter {
+pub(crate) struct Interpreter<I, O> {
     interpreter: *mut tflite_sys::TfLiteInterpreter,
     // These fields are never accessed.
-    //
     // They are here to ensure that resources created during interpreter construction
     // live as long as the interpreter.
     _options: Options,
     _devices: Devices,
     _model: Model,
     _delegates: Vec<Delegate>,
+    _i: PhantomData<I>,
+    _o: PhantomData<O>,
 }
 
-impl Interpreter {
+/// Logging callback for the posenet decoder delegate.
+unsafe extern "C" fn log_error(msg: *const std::os::raw::c_char) {
+    // SAFETY: `msg` is valid for the lifetime of the call, and doesn't
+    // change during that lifetime
+    eprintln!("{}", CStr::from_ptr(msg));
+}
+
+impl<I, O> Interpreter<I, O> {
     pub(crate) fn new<P>(path: P) -> Result<Self, Error>
     where
         P: AsRef<Path>,
@@ -54,7 +67,7 @@ impl Interpreter {
                         std::ptr::null_mut(),
                         std::ptr::null_mut(),
                         0,
-                        None,
+                        Some(log_error),
                     )
                 },
             )
@@ -88,6 +101,8 @@ impl Interpreter {
             _devices: devices,
             _model: model,
             _delegates: delegates,
+            _i: Default::default(),
+            _o: Default::default(),
         })
     }
 
