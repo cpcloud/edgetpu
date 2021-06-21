@@ -444,7 +444,7 @@ impl Decoder for HandRolledDecoder {
         let heatmaps = interp.get_output_tensor(0)?;
         let heatmaps = heatmaps
             .as_ndarray(*(height, width, pose::NUM_KEYPOINTS).into_shape().raw_dim())?
-            .mapv(|v: O| 1.0_f32 / (1.0_f32 + (-v).exp()));
+            .mapv(|v: f32| 1.0_f32 / (1.0_f32 + (-v).exp()));
 
         let offsets = interp.get_output_tensor(1)?;
         let offsets = offsets.as_ndarray(
