@@ -1,0 +1,41 @@
+[
+  {
+    "buffer": 0,
+    "is_variable": false,
+    "name": "float_heatmaps",
+    "quantization": {
+      "details_type": "NONE",
+      "quantized_dimension": 0,
+      "scale": [0.1157],
+      "zero_point": [204]
+    },
+    "shape": [1, 19, 27, 17],
+    "type": "UINT8"
+  },
+  {
+    "buffer": 0,
+    "is_variable": false,
+    "name": "float_short_offsets",
+    "quantization": {
+      "details_type": "NONE",
+      "quantized_dimension": 0,
+      "scale": [1.199291],
+      "zero_point": [134]
+    },
+    "shape": [1, 19, 27, 34],
+    "type": "UINT8"
+  },
+  {
+    "buffer": 0,
+    "is_variable": false,
+    "name": "float_mid_offsets",
+    "quantization": {
+      "details_type": "NONE",
+      "quantized_dimension": 0,
+      "scale": [2.820271],
+      "zero_point": [147]
+    },
+    "shape": [1, 19, 27, 64],
+    "type": "UINT8"
+  }
+]
