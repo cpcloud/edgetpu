@@ -1,15 +1,44 @@
 use crate::{error::Error, pose, tflite};
+use ndarray::{Axis, CowArray, Ix1, Ix2, Ix3};
+use num_traits::cast::FromPrimitive;
+
+/// Decode poses into a Vec of Pose.
+pub(self) fn reconstruct_from_arrays(
+    pose_keypoints: CowArray<f32, Ix3>,
+    keypoint_scores: CowArray<f32, Ix2>,
+    pose_scores: CowArray<f32, Ix1>,
+) -> Result<Box<[pose::Pose]>, Error> {
+    pose_scores
+        .indexed_iter()
+        .zip(pose_keypoints.axis_iter(Axis(0)))
+        .map(move |((pose_i, &score), keypoint)| {
+            let mut keypoints: pose::Keypoints = Default::default();
+
+            for (point_i, point) in keypoint.axis_iter(Axis(0)).enumerate() {
+                keypoints[point_i] = pose::Keypoint {
+                    kind: Some(
+                        pose::KeypointKind::from_usize(point_i)
+                            .ok_or(Error::ConvertUSizeToKeypointKind(point_i))?,
+                    ),
+                    point: opencv::core::Point2f::new(point[1], point[0]),
+                    score: keypoint_scores[(pose_i, point_i)],
+                };
+            }
+
+            Ok(pose::Pose { keypoints, score })
+        })
+        .collect::<Result<Box<_>, _>>()
+}
 
 pub(crate) trait Decoder {
     /// Return the number of expected_output_tensors the decoder expects to operate on.
     fn expected_output_tensors(&self) -> usize;
 
-    /// Decode poses into a Vec of Pose.
-    fn decode(
-        &self,
-        interp: &mut tflite::Interpreter,
-        dims: (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error>;
+    fn get_decoded_arrays<'a, 'b: 'a>(
+        &'a self,
+        interp: &'b mut tflite::Interpreter,
+        dims: (usize, usize),
+    ) -> Result<Box<[pose::Pose]>, Error>;
 
     /// Validate that the model has the expected number of output tensors.
     fn validate_output_tensor_count(&self, output_tensor_count: usize) -> Result<(), Error> {
@@ -60,15 +89,15 @@ impl Decoder for Decode {
         }
     }
 
-    fn decode(
-        &self,
-        interp: &mut tflite::Interpreter,
-        dims: (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error> {
+    fn get_decoded_arrays<'a, 'b: 'a>(
+        &'a self,
+        interp: &'b mut tflite::Interpreter,
+        dims: (usize, usize),
+    ) -> Result<Box<[pose::Pose]>, Error> {
         match self {
             #[cfg(feature = "posenet_decoder")]
-            Self::Posenet(d) => d.decode(interp, dims),
-            Self::HandRolled(d) => d.decode(interp, dims),
+            Self::Posenet(d) => d.get_decoded_arrays(interp, dims),
+            Self::HandRolled(d) => d.get_decoded_arrays(interp, dims),
         }
     }
 }

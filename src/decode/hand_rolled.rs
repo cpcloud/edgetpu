@@ -1,20 +1,20 @@
 use crate::{
     error::Error,
-    pose::{self, Keypoint, KeypointKind, Pose},
+    pose::{self, KeypointKind},
     tflite,
 };
 use ndarray::{
     array, s, Array1, Array2, Array3, ArrayView1, ArrayView2, ArrayView3, ArrayView4, Axis,
 };
-use num_traits::cast::{FromPrimitive, ToPrimitive};
+use num_traits::cast::ToPrimitive;
 
 #[derive(Debug, Clone, Copy, structopt::StructOpt)]
 pub(crate) struct Decoder {
     #[structopt(short, long, default_value = "16")]
     pub(crate) output_stride: u8,
-    #[structopt(short, long, default_value = "100")]
+    #[structopt(short = "-M", long, default_value = "100")]
     pub(crate) max_pose_detections: usize,
-    #[structopt(short, long, default_value = "0.2")]
+    #[structopt(short, long, default_value = "0.5")]
     pub(crate) score_threshold: f32,
     #[structopt(short, long, default_value = "20")]
     pub(crate) nms_radius: usize,
@@ -25,7 +25,7 @@ impl Default for Decoder {
         Self {
             output_stride: 16,
             max_pose_detections: 100,
-            score_threshold: 0.2,
+            score_threshold: 0.5,
             nms_radius: 20,
         }
     }
@@ -255,6 +255,7 @@ impl Decoder {
                     None
                 }
             })
+            .take(self.max_pose_detections)
     }
 
     #[allow(clippy::type_complexity)]
@@ -277,9 +278,9 @@ impl Decoder {
         scored_parts
             .sort_by_key(|part| ordered_float::NotNan::new(part.score).expect("value is NaN"));
 
-        let (height, width, _) = scores.dim();
+        let (width, height, _) = scores.dim();
 
-        let new_shape = [height, width, 2, offsets.len() / (height * width * 2)];
+        let new_shape = [width, height, 2, offsets.len() / (width * height * 2)];
 
         const TRANSPOSE_AXES: [usize; 4] = [0, 1, 3, 2];
 
@@ -289,13 +290,9 @@ impl Decoder {
             .permuted_axes(TRANSPOSE_AXES)
             .map(|&v| v.to_usize().unwrap());
         let new_displacments_fwd = displacements_fwd
-            .into_shape(new_shape)
-            .map_err(|e| Error::ReshapeFwdDisplacements(e, displacements_fwd.dim(), new_shape))?
             .permuted_axes(TRANSPOSE_AXES)
             .map(|&v| v.to_usize().unwrap());
         let new_displacments_bwd = displacements_bwd
-            .into_shape(new_shape)
-            .map_err(|e| Error::ReshapeBwdDisplacements(e, displacements_bwd.dim(), new_shape))?
             .permuted_axes(TRANSPOSE_AXES)
             .map(|&v| v.to_usize().unwrap());
 
@@ -313,7 +310,7 @@ impl Decoder {
             let root_image_coord = (coord
                 * usize::from(self.output_stride)
                 * new_offsets.slice(s![y, x, keypoint_id, ..]))
-            .map(|v| v.to_f32().unwrap());
+            .map(|v| v.to_f32().expect("failed to convert usize to f32"));
             if !self.within_nms_radius_fast(
                 pose_keypoint_coords.slice(s![..pose_count, keypoint_id, ..]),
                 root_image_coord.view(),
@@ -345,61 +342,69 @@ impl Decoder {
     }
 }
 
+fn dequantize(v: u8, scale: f32, zero_point: f32) -> f32 {
+    f32::from(v) * scale + zero_point
+}
+
+const HEATMAP_SCALE: f32 = 0.1157;
+const HEATMAP_ZERO_POINT: f32 = 204.0;
+
+const SHORT_OFFSETS_SCALE: f32 = 1.199291;
+const SHORT_OFFSETS_ZERO_POINT: f32 = 134.0;
+
+const MID_OFFSETS_SCALE: f32 = 2.820271;
+const MID_OFFSETS_ZERO_POINT: f32 = 147.0;
+
 impl crate::decode::Decoder for Decoder {
     fn expected_output_tensors(&self) -> usize {
         3
     }
 
-    fn decode(
-        &self,
-        interp: &mut tflite::Interpreter,
-        (frame_width, frame_height): (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error> {
-        let output_stride = u16::from(self.output_stride);
-        let height = usize::from(1 + (frame_height - 1) / output_stride);
-        let width = usize::from(1 + (frame_width - 1) / output_stride);
+    fn get_decoded_arrays<'a, 'b: 'a>(
+        &'a self,
+        interp: &'b mut tflite::Interpreter,
+        (frame_width, frame_height): (usize, usize),
+    ) -> Result<Box<[pose::Pose]>, Error> {
+        let output_stride = usize::from(self.output_stride);
+        let height = 1 + frame_height / output_stride;
+        let width = 1 + frame_width / output_stride;
 
         let heatmaps = interp.get_output_tensor(0)?;
         let heatmaps = heatmaps
-            .as_ndarray((height, width, pose::NUM_KEYPOINTS))?
-            .mapv(|v| 1.0 / (1.0 + (-v).exp()));
+            .as_ndarray(
+                unsafe { heatmaps.as_u8() },
+                (width, height, pose::NUM_KEYPOINTS),
+            )?
+            .mapv(|v| 1.0 / (1.0 + (-dequantize(v, HEATMAP_SCALE, HEATMAP_ZERO_POINT)).exp()));
 
         let offsets = interp.get_output_tensor(1)?;
-        let offsets = offsets.as_ndarray((height, width, 2 * pose::NUM_KEYPOINTS))?;
+        let offsets = offsets
+            .as_ndarray(
+                unsafe { offsets.as_u8() },
+                (width, height, 2 * pose::NUM_KEYPOINTS),
+            )?
+            .mapv(|v| dequantize(v, SHORT_OFFSETS_SCALE, SHORT_OFFSETS_ZERO_POINT));
 
         let raw_dsp = interp.get_output_tensor(2)?;
-        let raw_dsp = raw_dsp.as_ndarray((height, width, 4, usize::from(self.output_stride)))?;
+        let raw_dsp = raw_dsp
+            .as_ndarray(
+                unsafe { raw_dsp.as_u8() },
+                (1, width, height, 4 * usize::from(self.output_stride)),
+            )?
+            .into_shape((width, height, 4, usize::from(self.output_stride)))
+            .map_err(Error::ReshapeRawDsp)?
+            .mapv(|v| dequantize(v, MID_OFFSETS_SCALE, MID_OFFSETS_ZERO_POINT));
 
         let fwd = raw_dsp.slice(s![.., .., ..2, ..]);
         let bwd = raw_dsp.slice(s![.., .., 2.., ..]);
 
         let (pose_scores, keypoint_scores, keypoints) =
-            self.decode_multiple_poses(heatmaps, offsets, fwd, bwd)?;
+            self.decode_multiple_poses(heatmaps, offsets.view(), fwd, bwd)?;
 
-        let (nposes, nkeypoints, _) = keypoints.dim();
-        let mut poses = Vec::with_capacity(nposes);
-
-        for pose_i in 0..nposes {
-            let mut keypoint_map: pose::Keypoints = Default::default();
-
-            for point_i in 0..nkeypoints {
-                let point = keypoints.slice(s![pose_i, point_i, ..]);
-                keypoint_map[point_i] = Keypoint {
-                    kind: Some(
-                        KeypointKind::from_usize(point_i)
-                            .ok_or(Error::ConvertUSizeToKeypointKind(point_i))?,
-                    ),
-                    point: opencv::core::Point2f::new(point[1], point[0]),
-                    score: keypoint_scores[(pose_i, point_i)],
-                };
-            }
-
-            poses.push(Pose {
-                keypoints: keypoint_map,
-                score: pose_scores[pose_i],
-            });
-        }
-
-        Ok(poses)
+        crate::decode::reconstruct_from_arrays(
+            keypoints.into(),
+            keypoint_scores.into(),
+            pose_scores.into(),
+        )
     }
 }

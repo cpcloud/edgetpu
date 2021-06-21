@@ -1,14 +1,13 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-const LIBS: &[&str] = &["opencv4", "edgetpu", "tensorflow-lite"];
+const LIBS: &[&str] = &["opencv4", "edgetpu", "tensorflow-lite", "posenet_decoder"];
 
 fn main() -> Result<()> {
     println!("cargo:rustc-link-lib=edgetpu");
     println!("cargo:rustc-link-lib=static=tensorflow-lite");
-    if cfg!(feature = "posenet_decoder") {
-        println!("cargo:rustc-link-lib=posenet_decoder");
-    }
+    println!("cargo:rustc-link-lib=posenet_decoder");
+    println!("cargo:rustc-link-lib=coral");
 
     println!("cargo:rerun-if-changed=wrapper.h");
 
@@ -34,12 +33,6 @@ fn main() -> Result<()> {
         .opaque_type("max_align_t");
     for include_path in LIBS
         .iter()
-        .copied()
-        .chain(if cfg!(feature = "posenet_decoder") {
-            Box::new(std::iter::once("posenet_decoder")) as Box<dyn Iterator<Item = _>>
-        } else {
-            Box::new(std::iter::empty()) as Box<dyn Iterator<Item = _>>
-        })
         .flat_map(|lib| pkg_config::Config::new().probe(lib).unwrap().include_paths)
     {
         bindings = bindings.clang_arg(format!("-I{}", include_path.display()));

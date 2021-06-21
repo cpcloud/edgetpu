@@ -3,10 +3,10 @@ use crate::{
     tflite_sys,
 };
 
-/// A list of coral edge TPU devices.
+/// A list of edge TPU devices.
 pub(crate) struct Devices {
     /// SAFETY: This pointer is owned by the caller that constructs Devices
-    /// and is never mutated
+    /// and is never mutated externally.
     devices: *const tflite_sys::edgetpu_device,
     len: usize,
 }
@@ -37,7 +37,6 @@ impl Devices {
     pub(crate) fn types(
         &self,
     ) -> impl Iterator<Item = Result<tflite_sys::edgetpu_device_type, Error>> {
-        // SAFETY: self.devices + 0..self.len() is guaranteed to be non-null
         let devices = self.devices;
         (0..self.len()).map(move |offset| {
             // SAFETY: devices is guaranteed to be valid, and pointing to data with offset < len
@@ -48,7 +47,7 @@ impl Devices {
 
 impl Drop for Devices {
     fn drop(&mut self) {
-        // SAFETY: self.devices is a valid pointer.
+        // SAFETY: self.devices is a valid input.
         unsafe {
             tflite_sys::edgetpu_free_devices(self.devices as _);
         }

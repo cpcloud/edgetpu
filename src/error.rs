@@ -24,10 +24,13 @@ pub(crate) enum Error {
     GetExpectedNumOutputs(usize, usize),
 
     #[error("failed to convert row count i32 to usize")]
-    ConvertRowsToUsize,
+    ConvertRowsToUsize(#[source] std::num::TryFromIntError),
 
     #[error("failed to get value of Mat::elemSize1")]
     GetElemSize1(#[source] opencv::Error),
+
+    #[error("failed to get value of Mat::step1")]
+    GetStep1(#[source] opencv::Error),
 
     #[error("failed to construct array view from TfLiteTensor")]
     ConstructArrayView(#[source] ndarray::ShapeError),
@@ -82,19 +85,8 @@ pub(crate) enum Error {
         [usize; 4],
     ),
 
-    #[error("failed to reshape displacements_fwd from {0:?} to {1:?}")]
-    ReshapeFwdDisplacements(
-        #[source] ndarray::ShapeError,
-        (usize, usize, usize, usize),
-        [usize; 4],
-    ),
-
-    #[error("failed to reshape displacements_bwd from {0:?} to {1:?}")]
-    ReshapeBwdDisplacements(
-        #[source] ndarray::ShapeError,
-        (usize, usize, usize, usize),
-        [usize; 4],
-    ),
+    #[error("failed to reshape raw_dsp")]
+    ReshapeRawDsp(#[source] ndarray::ShapeError),
 
     #[error("failed to convert usize index to i32 index")]
     ConvertUSizeToI32Index(#[source] std::num::TryFromIntError),
@@ -108,10 +100,6 @@ pub(crate) enum Error {
     #[error("got null pointer when constructing Tensor")]
     CreateTensor,
 
-    #[cfg(feature = "posenet_decoder")]
-    #[error("failed to convert number of poses to usize")]
-    NumPosesToUSize,
-
     #[error("dimension index {0} is out of bounds for tensor with dimensions {1}")]
     GetDim(usize, usize),
 
@@ -120,6 +108,12 @@ pub(crate) enum Error {
 
     #[error("failed to convert value to usize")]
     ConvertToUSize,
+
+    #[error("failed to construct ArrayView3 from Mat")]
+    ConstructNDArrayFromMat(#[source] ndarray::ShapeError),
+
+    #[error("failed to get ndarray as contiguous slice")]
+    GetNDArrayAsSlice,
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {

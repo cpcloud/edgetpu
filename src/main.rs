@@ -1,7 +1,9 @@
 #![feature(variant_count)]
 
 use anyhow::{Context, Result};
+use error::Error;
 use indicatif::{ProgressBar, ProgressStyle};
+use ndarray::ArrayView3;
 use num_traits::cast::ToPrimitive;
 use opencv::{
     core::{Mat, CV_8UC3},
@@ -10,6 +12,7 @@ use opencv::{
     videoio::{VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, CAP_V4L2},
 };
 use std::{
+    convert::TryFrom,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -28,8 +31,8 @@ mod tflite;
 mod tflite_sys;
 
 fn draw_poses(
-    #[cfg(feature = "gui")] poses: Vec<pose::Pose>,
-    #[cfg(not(feature = "gui"))] _poses: Vec<pose::Pose>,
+    #[cfg(feature = "gui")] poses: &[pose::Pose],
+    #[cfg(not(feature = "gui"))] _poses: &[pose::Pose],
     #[cfg(feature = "gui")] threshold: f32,
     #[cfg(not(feature = "gui"))] _threshold: f32,
     timing: engine::Timing,
@@ -53,7 +56,7 @@ fn draw_poses(
             imgproc::{FONT_HERSHEY_SIMPLEX, LINE_8, LINE_AA},
         };
 
-        for pose in poses.into_iter() {
+        for pose in poses {
             let mut xys = [None; pose::NUM_KEYPOINTS];
 
             for keypoint in pose.keypoints {
@@ -154,6 +157,27 @@ struct Opt {
     decoder: decode::Decode,
 }
 
+fn mat_to_ndarray(input: &Mat) -> Result<ArrayView3<u8>, Error> {
+    let step = input.step1(0).map_err(Error::GetStep1)?
+        * input.elem_size1().map_err(Error::GetElemSize1)?;
+    let rows = usize::try_from(input.rows()).map_err(Error::ConvertRowsToUsize)?;
+    let num_elements = step * rows;
+
+    // copy the bytes into the input tensor
+    let raw_data = input.data().map_err(Error::GetMatData)? as _;
+    let data = unsafe { std::slice::from_raw_parts(raw_data, num_elements) };
+    ArrayView3::from_shape(
+        (
+            usize::try_from(input.rows()).map_err(Error::ConvertDimI32ToUSize)?,
+            usize::try_from(input.cols()).map_err(Error::ConvertDimI32ToUSize)?,
+            usize::try_from(input.channels().map_err(Error::GetChannels)?)
+                .map_err(Error::ConvertDimI32ToUSize)?,
+        ),
+        data,
+    )
+    .map_err(Error::ConstructNDArrayFromMat)
+}
+
 fn main() -> Result<()> {
     let opt = Opt::from_args();
     let threshold = opt.threshold;
@@ -170,14 +194,23 @@ fn main() -> Result<()> {
 
     let width = capture.get(CAP_PROP_FRAME_WIDTH)?;
     let height = capture.get(CAP_PROP_FRAME_HEIGHT)?;
-    println!("width: {}, height: {}", width, height);
+    println!(
+        "width: {}, height: {}",
+        width.to_usize().unwrap(),
+        height.to_usize().unwrap()
+    );
 
-    let mut in_frame = Mat::zeros(
-        height.to_i32().expect("failed to convert height to i32"),
-        width.to_i32().expect("failed to convert width to i32"),
-        CV_8UC3,
-    )?
-    .to_mat()?;
+    // let mut in_frame = Mat::zeros(
+    //     height.to_i32().expect("failed to convert height to i32"),
+    //     width.to_i32().expect("failed to convert width to i32"),
+    //     CV_8UC3,
+    // )?
+    // .to_mat()?;
+    let in_frame = opencv::imgcodecs::imread(
+        "/home/cloud/src/edgetpu/test_couple.jpg",
+        opencv::imgcodecs::IMREAD_COLOR,
+    )?;
+    dbg!(in_frame.clone());
     let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)?.to_mat()?;
     let out_frame_size = out_frame.size()?;
 
@@ -200,33 +233,61 @@ fn main() -> Result<()> {
     })
     .expect("Error setting Ctrl-C handler");
 
+    // while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")?
+    //     && running.load(Ordering::SeqCst)
+    // {
+    //     let frame_start = Instant::now();
+    //     // capture.read(&mut in_frame)?;
+    //     frame_duration += frame_start.elapsed();
+    //     nframes += 1;
+    //
+    //     resize(
+    //         &in_frame,
+    //         &mut out_frame,
+    //         out_frame_size,
+    //         0.0,
+    //         0.0,
+    //         INTER_LINEAR,
+    //     )?;
+    //     opencv::highgui::imshow("foo", &out_frame)?;
+    //
+    //     let (poses, timing) = engine.detect_poses(mat_to_ndarray(&out_frame)?)?;
+    //     draw_poses(
+    //         &poses,
+    //         threshold,
+    //         timing,
+    //         &mut out_frame,
+    //         frame_duration,
+    //         nframes,
+    //         &pb_model_cam_fps,
+    //     )?;
+    // }
+    let frame_start = Instant::now();
+    // capture.read(&mut in_frame)?;
+    frame_duration += frame_start.elapsed();
+    nframes += 1;
+
+    resize(
+        &in_frame,
+        &mut out_frame,
+        out_frame_size,
+        0.0,
+        0.0,
+        INTER_LINEAR,
+    )?;
+
+    let (poses, timing) = engine.detect_poses(mat_to_ndarray(&out_frame)?)?;
+    draw_poses(
+        &poses,
+        threshold,
+        timing,
+        &mut out_frame,
+        frame_duration,
+        nframes,
+        &pb_model_cam_fps,
+    )?;
     while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")?
         && running.load(Ordering::SeqCst)
-    {
-        let frame_start = Instant::now();
-        capture.read(&mut in_frame)?;
-        frame_duration += frame_start.elapsed();
-        nframes += 1;
-
-        resize(
-            &in_frame,
-            &mut out_frame,
-            out_frame_size,
-            0.0,
-            0.0,
-            INTER_LINEAR,
-        )?;
-
-        let poses = engine.detect_poses(&out_frame)?;
-        draw_poses(
-            poses,
-            threshold,
-            engine.timing,
-            &mut out_frame,
-            frame_duration,
-            nframes,
-            &pb_model_cam_fps,
-        )?;
-    }
+    {}
     Ok(())
 }

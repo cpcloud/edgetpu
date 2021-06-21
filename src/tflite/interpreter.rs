@@ -28,12 +28,12 @@ pub(crate) struct Interpreter {
     _options: Options,
     _devices: Devices,
     _model: Model,
-    _delegates: Vec<Delegate>,
+    _delegates: Box<[Delegate]>,
 }
 
 /// Logging callback for the posenet decoder delegate.
 #[cfg(feature = "posenet_decoder")]
-unsafe extern "C" fn log_error(msg: *const std::os::raw::c_char) {
+unsafe extern "C" fn posenet_decoder_delegate_error_handler(msg: *const std::os::raw::c_char) {
     // SAFETY: `msg` is valid for the lifetime of the call, and doesn't
     // change during that lifetime
     eprintln!("{:?}", std::ffi::CStr::from_ptr(msg));
@@ -58,13 +58,13 @@ impl Interpreter {
         {
             let mut posenet_decoder_delegate = Delegate::new(
                 check_null_mut(
-                    // SAFETY: the delegate is guaranteed to be valid
+                    // SAFETY: inputs are valid
                     unsafe {
                         tflite_plugin_create_delegate(
                             std::ptr::null_mut(),
                             std::ptr::null_mut(),
                             0,
-                            Some(log_error),
+                            Some(posenet_decoder_delegate_error_handler),
                         )
                     },
                 )
@@ -98,7 +98,7 @@ impl Interpreter {
             _options: options,
             _devices: devices,
             _model: model,
-            _delegates: delegates,
+            _delegates: delegates.into_boxed_slice(),
         })
     }
 

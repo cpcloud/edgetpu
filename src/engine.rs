@@ -1,11 +1,11 @@
 use crate::{decode::Decoder, error::Error, pose, tflite};
-use num_traits::cast::ToPrimitive;
-use opencv::{core::Mat, prelude::*};
+use ndarray::ArrayView3;
 use std::{
     path::Path,
     time::{Duration, Instant},
 };
 
+/// An engine for doing pose estimation with edge TPU devices
 pub(crate) struct Engine<D> {
     interpreter: tflite::Interpreter,
     decoder: D,
@@ -21,6 +21,10 @@ impl<D> Engine<D>
 where
     D: Decoder,
 {
+    /// Construct a new Engine for pose estimation.
+    ///
+    /// `model_path` is a valid path to a Tensorflow Lite Flatbuffer-based model.
+    /// `decoder` is a type that implements the `crate::decode::Decoder` trait.
     pub(crate) fn new<P>(model_path: P, decoder: D) -> Result<Self, Error>
     where
         P: AsRef<Path>,
@@ -37,18 +41,10 @@ where
         })
     }
 
-    fn infer(&mut self, input: &Mat) -> Result<(), Error> {
-        let step = input.step1(0).map_err(Error::GetChannels)?
-            * input.elem_size1().map_err(Error::GetElemSize1)?;
-        let rows = input.rows().to_usize().ok_or(Error::ConvertRowsToUsize)?;
-        let num_elements = step * rows;
-
-        let raw_data = input.data().map_err(Error::GetMatData)? as _;
-
-        // copy the bytes into the input tensor
+    fn infer(&mut self, input: ArrayView3<u8>) -> Result<(), Error> {
         self.interpreter
             .get_input_tensor(0)?
-            .copy_from_raw_buffer(raw_data, num_elements)?;
+            .copy_from_buffer(input.as_slice().ok_or(Error::GetNDArrayAsSlice)?)?;
 
         // run inference
         let start_inference = Instant::now();
@@ -57,14 +53,16 @@ where
         Ok(())
     }
 
-    pub(crate) fn detect_poses(&mut self, input: &Mat) -> Result<Vec<pose::Pose>, Error> {
+    pub(crate) fn detect_poses<'a, 'b: 'a>(
+        &'a mut self,
+        input: ArrayView3<'b, u8>,
+    ) -> Result<(Box<[pose::Pose]>, Timing), Error> {
         self.infer(input)?;
-        self.decoder.decode(
-            &mut self.interpreter,
-            (
-                input.rows().to_u16().unwrap(),
-                input.cols().to_u16().unwrap(),
-            ),
-        )
+        let (rows, cols, _) = input.dim();
+        Ok((
+            self.decoder
+                .get_decoded_arrays(&mut self.interpreter, (rows, cols))?,
+            self.timing,
+        ))
     }
 }

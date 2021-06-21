@@ -42,19 +42,24 @@ impl<'interp> Tensor<'interp> {
         })
     }
 
-    pub(crate) fn as_slice(&'interp self) -> &'interp [f32] {
-        unsafe { std::slice::from_raw_parts((*self.tensor).data.f, self.len) }
+    #[cfg(feature = "posenet_decoder")]
+    pub(crate) unsafe fn as_f32(&'interp self) -> &'interp [f32] {
+        std::slice::from_raw_parts((*self.tensor).data.f, self.len)
     }
 
-    pub(crate) fn as_ndarray<I>(
+    pub(crate) unsafe fn as_u8(&'interp self) -> &'interp [u8] {
+        std::slice::from_raw_parts((*self.tensor).data.uint8, self.len)
+    }
+
+    pub(crate) fn as_ndarray<T, I>(
         &'interp self,
+        slice: &'interp [T],
         dims: I,
-    ) -> Result<ArrayView<'interp, f32, I::Dim>, Error>
+    ) -> Result<ArrayView<'interp, T, I::Dim>, Error>
     where
         I: IntoDimension,
     {
-        ArrayView::from_shape(dims.into_dimension(), self.as_slice())
-            .map_err(Error::ConstructArrayView)
+        ArrayView::from_shape(dims.into_dimension(), slice).map_err(Error::ConstructArrayView)
     }
 
     #[cfg(feature = "posenet_decoder")]
@@ -62,11 +67,16 @@ impl<'interp> Tensor<'interp> {
         dim(self.tensor, index)
     }
 
-    pub(crate) fn copy_from_raw_buffer(&mut self, buf: *const u8, len: usize) -> Result<(), Error> {
-        assert!(!buf.is_null());
-        // SAFETY: buf is guaranteed to be valid and of len buf.len()
+    pub(crate) fn copy_from_buffer(&mut self, buf: &[u8]) -> Result<(), Error> {
         tflite_status_to_result(
-            unsafe { tflite_sys::TfLiteTensorCopyFromBuffer(self.tensor as _, buf.cast(), len) },
+            // SAFETY: buf is guaranteed to be valid and have length buf.len()
+            unsafe {
+                tflite_sys::TfLiteTensorCopyFromBuffer(
+                    self.tensor as _,
+                    buf.as_ptr().cast(),
+                    buf.len(),
+                )
+            },
             "failed to copy from input buffer",
         )
     }
