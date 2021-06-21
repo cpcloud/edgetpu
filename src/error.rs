@@ -114,6 +114,12 @@ pub(crate) enum Error {
 
     #[error("dimension index {0} is out of bounds for tensor with dimensions {1}")]
     GetDim(usize, usize),
+
+    #[error("failed to convert value to f32")]
+    ConvertToF32,
+
+    #[error("failed to convert value to usize")]
+    ConvertToUSize,
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {

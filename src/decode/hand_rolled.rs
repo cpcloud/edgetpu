@@ -8,91 +8,8 @@ use ndarray::{
 };
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 
-pub(crate) trait Decoder {
-    /// Return the number of expected_output_tensors the decoder expects to operate on.
-    fn expected_output_tensors(&self) -> usize;
-
-    /// Decode poses into a Vec of Pose.
-    fn decode(
-        &self,
-        interp: &mut tflite::Interpreter,
-        dims: (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error>;
-
-    /// Validate that the model has the expected number of output tensors.
-    fn validate_output_tensor_count(&self, output_tensor_count: usize) -> Result<(), Error> {
-        let expected_output_tensors = self.expected_output_tensors();
-        if output_tensor_count != expected_output_tensors {
-            Err(Error::GetExpectedNumOutputs(
-                expected_output_tensors,
-                output_tensor_count,
-            ))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-#[cfg(feature = "posenet_decoder")]
-#[derive(Debug, Clone, Copy, Default, structopt::StructOpt)]
-pub(crate) struct PosenetDecoder {}
-
-#[cfg(feature = "posenet_decoder")]
-impl Decoder for PosenetDecoder {
-    fn expected_output_tensors(&self) -> usize {
-        4
-    }
-
-    fn decode(
-        &self,
-        interp: &mut tflite::Interpreter,
-        (_width, _height): (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error> {
-        // construct the output tensors
-        let pose_keypoints = interp.get_output_tensor(0)?;
-        let pose_keypoints = pose_keypoints.as_ndarray((
-            pose_keypoints.dim(1)?,
-            pose_keypoints.dim(2)?,
-            pose_keypoints.dim(3)?,
-        ))?;
-        let keypoint_scores = interp.get_output_tensor(1)?;
-        let keypoint_scores =
-            keypoint_scores.as_ndarray((keypoint_scores.dim(1)?, keypoint_scores.dim(2)?))?;
-        let pose_scores = interp.get_output_tensor(2)?;
-        let pose_scores = pose_scores.as_ndarray(pose_scores.dim(1)?)?;
-        let nposes = interp.get_output_tensor(3)?.as_slice()[0]
-            .to_usize()
-            .ok_or(Error::NumPosesToUSize)?;
-
-        // move poses into a more useful structure
-        let mut poses = Vec::with_capacity(nposes);
-
-        for (pose_i, keypoint) in pose_keypoints.axis_iter(ndarray::Axis(0)).enumerate() {
-            let mut keypoint_map: pose::Keypoints = Default::default();
-
-            for (point_i, point) in keypoint.axis_iter(ndarray::Axis(0)).enumerate() {
-                keypoint_map[point_i] = Keypoint {
-                    kind: Some(
-                        KeypointKind::from_usize(point_i)
-                            .ok_or(Error::ConvertUSizeToKeypointKind(point_i))?,
-                    ),
-                    point: opencv::core::Point2f::new(point[1], point[0]),
-                    score: keypoint_scores[(pose_i, point_i)],
-                };
-            }
-
-            poses.push(Pose {
-                keypoints: keypoint_map,
-                score: pose_scores[pose_i],
-            });
-        }
-
-        Ok(poses)
-    }
-}
-
 #[derive(Debug, Clone, Copy, structopt::StructOpt)]
-pub(crate) struct HandRolledDecoder {
+pub(crate) struct Decoder {
     #[structopt(short, long, default_value = "16")]
     pub(crate) output_stride: u8,
     #[structopt(short, long, default_value = "100")]
@@ -103,6 +20,17 @@ pub(crate) struct HandRolledDecoder {
     pub(crate) nms_radius: usize,
 }
 
+impl Default for Decoder {
+    fn default() -> Self {
+        Self {
+            output_stride: 16,
+            max_pose_detections: 100,
+            score_threshold: 0.2,
+            nms_radius: 20,
+        }
+    }
+}
+
 struct Part {
     score: f32,
     keypoint_id: usize,
@@ -110,7 +38,7 @@ struct Part {
     y: usize,
 }
 
-impl HandRolledDecoder {
+impl Decoder {
     fn traverse_target_to_keypoint(
         &self,
         edge_id: usize,
@@ -119,19 +47,21 @@ impl HandRolledDecoder {
         scores: ArrayView3<f32>,
         offsets: ArrayView4<usize>,
         displacements: ArrayView4<usize>,
-    ) -> (f32, Array1<f32>) {
+    ) -> Result<(f32, Array1<f32>), Error> {
         let (height, width, _) = scores.dim();
         let rounded_source_keypoints =
-            (&source_keypoint / f32::from(self.output_stride)).mapv(|v| v.round());
+            source_keypoint.map(|v| (v / f32::from(self.output_stride)).round());
+        let height_float = height.to_f32().ok_or(Error::ConvertToF32)?;
+        let width_float = width.to_f32().ok_or(Error::ConvertToF32)?;
         let source_keypoint_indices = array![
             rounded_source_keypoints[0]
-                .clamp(0.0, height.to_f32().unwrap() - 1.0)
+                .clamp(0.0, height_float - 1.0)
                 .to_usize()
-                .unwrap(),
+                .ok_or(Error::ConvertToUSize)?,
             rounded_source_keypoints[1]
-                .clamp(0.0, width.to_f32().unwrap() - 1.0)
+                .clamp(0.0, width_float - 1.0)
                 .to_usize()
-                .unwrap(),
+                .ok_or(Error::ConvertToUSize)?
         ];
         let displaced_points = &source_keypoint
             + displacements
@@ -144,17 +74,11 @@ impl HandRolledDecoder {
                 .mapv(|v| v.to_f32().expect("failed to convert usize to f32"));
         let displaced_point_indices = array![
             displaced_points[0]
-                .clamp(
-                    0.0,
-                    height.to_f32().expect("failed to convert usize to f32") - 1.0
-                )
+                .clamp(0.0, height_float - 1.0)
                 .to_usize()
                 .expect("failed to convert f32 to usize"),
             displaced_points[1]
-                .clamp(
-                    0.0,
-                    width.to_f32().expect("failed to convert usize to f32") - 1.0
-                )
+                .clamp(0.0, width_float - 1.0)
                 .to_usize()
                 .expect("failed to convert f32 to usize"),
         ];
@@ -163,10 +87,10 @@ impl HandRolledDecoder {
         let image_coord = &displaced_point_indices
             * usize::from(self.output_stride)
             * offsets.slice(s![row, col, target_keypoint_id, ..]);
-        (
+        Ok((
             score,
             image_coord.mapv(|v| v.to_f32().expect("failed to convert usize to f32")),
-        )
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -180,7 +104,7 @@ impl HandRolledDecoder {
         displacements_fwd: ArrayView4<usize>,
         displacements_bwd: ArrayView4<usize>,
     ) -> Result<(Array1<f32>, Array2<f32>), Error> {
-        let (_, _, num_parts) = scores.dim();
+        let (.., num_parts) = scores.dim();
 
         let mut instance_keypoint_scores = Array1::zeros(num_parts);
         let mut instance_keypoint_coords = Array2::zeros((num_parts, 2));
@@ -206,7 +130,7 @@ impl HandRolledDecoder {
                     scores,
                     offsets,
                     displacements,
-                );
+                )?;
                 instance_keypoint_scores[target_keypoint_id] = score;
                 instance_keypoint_coords
                     .slice_mut(s![target_keypoint_id, ..])
@@ -243,13 +167,17 @@ impl HandRolledDecoder {
         Ok((instance_keypoint_scores, instance_keypoint_coords))
     }
 
-    fn within_nms_radius_fast(&self, pose_coords: ArrayView2<f32>, point: ArrayView1<f32>) -> bool {
-        let squared_nms_radius = self.nms_radius.pow(2).to_f32().unwrap();
-        pose_coords.dim().0 != 0
+    fn within_nms_radius_fast(
+        &self,
+        pose_coords: ArrayView2<f32>,
+        point: ArrayView1<f32>,
+    ) -> Result<bool, Error> {
+        let squared_nms_radius = self.nms_radius.pow(2).to_f32().ok_or(Error::ConvertToF32)?;
+        Ok(pose_coords.dim().0 != 0
             && (&pose_coords - &point)
                 .fold_axis(Axis(1), 0.0, |&total, &value| total + value.powi(2))
                 .into_iter()
-                .any(|v| v <= squared_nms_radius)
+                .any(|v| v <= squared_nms_radius))
     }
 
     fn get_instance_score_fast(
@@ -259,26 +187,27 @@ impl HandRolledDecoder {
         keypoint_scores: ArrayView1<f32>,
         // m x n
         keypoint_coords: ArrayView2<f32>,
-    ) -> f32 {
-        let squared_nms_radius = self.nms_radius.pow(2).to_f32().unwrap();
-        let denominator = keypoint_scores.len().to_f32().unwrap();
+    ) -> Result<f32, Error> {
+        let squared_nms_radius = self.nms_radius.pow(2).to_f32().ok_or(Error::ConvertToF32)?;
+        let denominator = keypoint_scores.len().to_f32().ok_or(Error::ConvertToF32)?;
         let (first_dim, ..) = exist_pose_coords.dim();
 
         let sum = if first_dim != 0 {
-            let mask = (&exist_pose_coords - &keypoint_coords)
-                .fold_axis(Axis(2), 0.0, |&total, &value| total + value.powi(2))
-                .fold_axis(Axis(0), true, |&previous, &value| {
-                    previous && value > squared_nms_radius
-                });
             keypoint_scores
                 .iter()
-                .enumerate()
-                .filter_map(|(i, &v)| if mask[i] { Some(v) } else { None })
+                .zip(
+                    (&exist_pose_coords - &keypoint_coords)
+                        .fold_axis(Axis(2), 0.0, |&total, &value| total + value.powi(2))
+                        .fold_axis(Axis(0), true, |&previous, &value| {
+                            previous && value > squared_nms_radius
+                        }),
+                )
+                .filter_map(|(&v, m)| if m { Some(v) } else { None })
                 .sum()
         } else {
             keypoint_scores.sum()
         };
-        sum / denominator
+        Ok(sum / denominator)
     }
 
     fn score_is_max_in_local_window(
@@ -388,7 +317,7 @@ impl HandRolledDecoder {
             if !self.within_nms_radius_fast(
                 pose_keypoint_coords.slice(s![..pose_count, keypoint_id, ..]),
                 root_image_coord.view(),
-            ) {
+            )? {
                 let (keypoint_scores, keypoint_coords) = self.decode_pose(
                     score,
                     keypoint_id,
@@ -402,7 +331,7 @@ impl HandRolledDecoder {
                     pose_keypoint_coords.slice(s![..pose_count, .., ..]),
                     keypoint_scores.view(),
                     keypoint_coords.view(),
-                );
+                )?;
                 pose_keypoint_scores
                     .slice_mut(s![pose_count, ..])
                     .assign(&keypoint_scores);
@@ -416,7 +345,7 @@ impl HandRolledDecoder {
     }
 }
 
-impl Decoder for HandRolledDecoder {
+impl crate::decode::Decoder for Decoder {
     fn expected_output_tensors(&self) -> usize {
         3
     }
@@ -472,43 +401,5 @@ impl Decoder for HandRolledDecoder {
         }
 
         Ok(poses)
-    }
-}
-
-#[derive(Debug, structopt::StructOpt)]
-pub(crate) enum Decode {
-    /// Decode using the builtin PosenetDecoderOp
-    #[cfg(feature = "posenet_decoder")]
-    Posenet(PosenetDecoder),
-    /// Decode using a hand rolled decoder
-    HandRolled(HandRolledDecoder),
-}
-
-#[cfg(feature = "posenet_decoder")]
-impl Default for Decode {
-    fn default() -> Self {
-        Self::Posenet(PosenetDecoder {})
-    }
-}
-
-impl Decoder for Decode {
-    fn expected_output_tensors(&self) -> usize {
-        match self {
-            #[cfg(feature = "posenet_decoder")]
-            Self::Posenet(d) => d.expected_output_tensors(),
-            Self::HandRolled(d) => d.expected_output_tensors(),
-        }
-    }
-
-    fn decode(
-        &self,
-        interp: &mut tflite::Interpreter,
-        dims: (u16, u16),
-    ) -> Result<Vec<pose::Pose>, Error> {
-        match self {
-            #[cfg(feature = "posenet_decoder")]
-            Self::Posenet(d) => d.decode(interp, dims),
-            Self::HandRolled(d) => d.decode(interp, dims),
-        }
     }
 }
