@@ -60,7 +60,7 @@ impl Interpreter {
             )
             .ok_or(Error::CreatePosenetDecoderDelegate)?,
             |delegate| unsafe { tflite_plugin_destroy_delegate(delegate) },
-        );
+        )?;
 
         options.add_delegate(&mut posenet_decoder_delegate);
 

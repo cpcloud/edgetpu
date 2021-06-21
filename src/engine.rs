@@ -44,14 +44,11 @@ impl Engine {
                 .map_err(Error::GetChannels)?
                 .to_usize()
                 .unwrap();
-        // SAFETY: raw_data is a valid pointer, points to data of length `number_of_elements`
-        // and lives <= the lifetime of `input`
-        let bytes = unsafe { std::slice::from_raw_parts(raw_data, number_of_elements) };
 
         // copy the bytes into the input tensor
         self.interpreter
             .get_input_tensor(0)?
-            .copy_from_buffer(bytes)?;
+            .copy_from_raw_buffer(raw_data, number_of_elements)?;
 
         // run inference
         let start_inference = Instant::now();

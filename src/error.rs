@@ -65,6 +65,9 @@ pub(crate) enum Error {
 
     #[error("failed to convert num poses value to usize")]
     ConvertNumPosesToUSize,
+
+    #[error("failed to construct delegate, got null pointer")]
+    ConstructDelegate,
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {
@@ -75,6 +78,7 @@ pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {
     }
 }
 
+///
 pub(crate) fn check_null<T>(ptr: *const T) -> Option<*const T> {
     if ptr.is_null() {
         None
@@ -87,11 +91,13 @@ pub(crate) fn tflite_status_to_result(
     status: tflite_sys::TfLiteStatus,
     msg: &'static str,
 ) -> Result<(), Error> {
+    use tflite_sys::TfLiteStatus;
+
     match status {
-        tflite_sys::TfLiteStatus::kTfLiteOk => Ok(()),
-        tflite_sys::TfLiteStatus::kTfLiteError => Err(Error::TfLite(msg)),
-        tflite_sys::TfLiteStatus::kTfLiteDelegateError => Err(Error::Delegate(msg)),
-        tflite_sys::TfLiteStatus::kTfLiteApplicationError => Err(Error::Application(msg)),
+        TfLiteStatus::kTfLiteOk => Ok(()),
+        TfLiteStatus::kTfLiteError => Err(Error::TfLite(msg)),
+        TfLiteStatus::kTfLiteDelegateError => Err(Error::Delegate(msg)),
+        TfLiteStatus::kTfLiteApplicationError => Err(Error::Application(msg)),
         _ => panic!("unknown error code: {:?}", status),
     }
 }

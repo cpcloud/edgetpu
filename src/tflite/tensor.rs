@@ -53,16 +53,10 @@ impl<'a> Tensor<'a> {
         dim(self.tensor as _, dim_index)
     }
 
-    pub(crate) fn copy_from_buffer(&mut self, buf: &[u8]) -> Result<(), Error> {
+    pub(crate) fn copy_from_raw_buffer(&mut self, buf: *const u8, len: usize) -> Result<(), Error> {
         // SAFETY: buf is guaranteed to be valid and of len buf.len()
         tflite_status_to_result(
-            unsafe {
-                tflite_sys::TfLiteTensorCopyFromBuffer(
-                    self.tensor as _,
-                    buf.as_ptr() as _,
-                    buf.len(),
-                )
-            },
+            unsafe { tflite_sys::TfLiteTensorCopyFromBuffer(self.tensor as _, buf.cast(), len) },
             "failed to copy from input buffer",
         )
     }

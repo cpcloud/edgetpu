@@ -4,29 +4,27 @@ use crate::{
     tflite_sys,
 };
 
-/// A list of coral edge TPU devices
+/// A list of coral edge TPU devices.
 pub(crate) struct Devices {
     /// SAFETY: This pointer is owned by the constructor and never mutated
     devices: *const tflite_sys::edgetpu_device,
     len: usize,
 }
 
-pub(crate) struct Device<'parent> {
-    device: &'parent tflite_sys::edgetpu_device,
-}
+pub(crate) struct Device<'devices>(&'devices tflite_sys::edgetpu_device);
 
-impl<'parent> Device<'parent> {
-    fn new(device: &'parent tflite_sys::edgetpu_device) -> Self {
-        Self { device }
+impl<'devices> Device<'devices> {
+    fn new(device: &'devices tflite_sys::edgetpu_device) -> Self {
+        Self(device)
     }
 
     pub(crate) fn delegate(&self) -> Result<Delegate, Error> {
-        Ok(Delegate::new(
+        Delegate::new(
             check_null_mut(
                 // SAFETY: inputs are all valid, and the return value is checked for null
                 unsafe {
                     tflite_sys::edgetpu_create_delegate(
-                        (*self.device).type_,
+                        (*self.0).type_,
                         std::ptr::null(),
                         std::ptr::null(),
                         0,
@@ -35,7 +33,7 @@ impl<'parent> Device<'parent> {
             )
             .ok_or(Error::CreateEdgeTpuDelegate)?,
             |delegate| unsafe { tflite_sys::edgetpu_free_delegate(delegate) },
-        ))
+        )
     }
 }
 
