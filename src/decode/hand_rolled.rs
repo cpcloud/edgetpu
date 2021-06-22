@@ -3,7 +3,7 @@ use crate::{
     pose::{self, NUM_KEYPOINTS},
     tflite,
 };
-use ndarray::{array, s, Array, Array1, Array2, Array3};
+use ndarray::{Array, Array1, Array2, Array3};
 use num_traits::{cast::ToPrimitive, Zero};
 use opencv::core::Point2f;
 use ordered_float::NotNan;
@@ -86,6 +86,7 @@ impl DecreasingScoreKeypointPriorityQueue {
         Self(BinaryHeap::new())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_keypoint(
         &mut self,
         scores: &[f32],
@@ -196,7 +197,8 @@ fn decreasing_arg_sort(scores: &[f32], indices: &mut [usize]) {
 }
 
 impl Decoder {
-    fn decode_all_poses(
+    #[allow(clippy::type_complexity)]
+    fn decode_all_poses<const N: usize>(
         &self,
         scores: &[f32],
         short_offsets: &[f32],
@@ -205,19 +207,17 @@ impl Decoder {
         width: usize,
     ) -> Result<(Array1<f32>, Array2<f32>, Array3<f32>), Error> {
         let &Self {
-            nms_radius,
             max_pose_detections,
             score_threshold,
-            mid_short_offset_refinement_steps,
             output_stride,
+            ..
         } = self;
+        let output_stride = f32::from(output_stride);
         let nms_radius =
-            nms_radius.to_f32().ok_or(Error::ConvertToF32)? * f32::from(output_stride).recip();
-        let mut pose_scores = vec![0.0; self.max_pose_detections];
-        let mut pose_keypoint_scores =
-            vec![PoseKeypointScores::<NUM_KEYPOINTS>::default(); self.max_pose_detections];
-        let mut pose_keypoints =
-            vec![PoseKeypoints::<NUM_KEYPOINTS>::default(); self.max_pose_detections];
+            self.nms_radius.to_f32().ok_or(Error::ConvertToF32)? * output_stride.recip();
+        let mut pose_scores = vec![0.0; max_pose_detections];
+        let mut pose_keypoint_scores = vec![[0.0; N]; max_pose_detections];
+        let mut pose_keypoints = vec![[Point2f::default(); N]; max_pose_detections];
 
         let local_maximum_radius = pose::constants::LOCAL_MAXIMUM_RADIUS;
         let min_score_logit = log_odds(score_threshold);
@@ -239,10 +239,8 @@ impl Decoder {
         let mut pose_counter = 0usize;
 
         let mut all_instance_scores = Vec::with_capacity(max_pose_detections);
-        let mut scratch_poses =
-            vec![PoseKeypoints::<NUM_KEYPOINTS>::default(); max_pose_detections];
-        let mut scratch_keypoint_scores =
-            vec![PoseKeypointScores::<NUM_KEYPOINTS>::default(); max_pose_detections];
+        let mut scratch_poses = vec![[Point2f::default(); N]; max_pose_detections];
+        let mut scratch_keypoint_scores = vec![[0.0; N]; max_pose_detections];
 
         while let Some(root) = queue.0.pop() {
             if pose_counter >= max_pose_detections {
@@ -269,7 +267,7 @@ impl Decoder {
                 NUM_EDGES,
                 &root,
                 &adjacency_list,
-                mid_short_offset_refinement_steps,
+                self.mid_short_offset_refinement_steps,
                 next_pose,
                 next_scores,
             )?;
@@ -303,19 +301,16 @@ impl Decoder {
 
         pose_counter = 0;
 
-        for index in decreasing_indices.into_iter() {
-            if all_instance_scores[index] < score_threshold {
-                break;
-            }
-
+        for index in decreasing_indices
+            .into_iter()
+            .take_while(|&index| all_instance_scores[index] < score_threshold)
+        {
             for k in 0..pose::NUM_KEYPOINTS {
-                pose_keypoints[pose_counter][k].y =
-                    scratch_poses[index][k].y * f32::from(output_stride);
-                pose_keypoints[pose_counter][k].x =
-                    scratch_poses[index][k].x * f32::from(output_stride);
+                pose_keypoints[pose_counter][k].y = scratch_poses[index][k].y * output_stride;
+                pose_keypoints[pose_counter][k].x = scratch_poses[index][k].x * output_stride;
             }
 
-            pose_keypoint_scores[pose_counter] = scratch_keypoint_scores[index].clone();
+            pose_keypoint_scores[pose_counter] = scratch_keypoint_scores[index];
             pose_scores[pose_counter] = all_instance_scores[index];
             pose_counter += 1;
         }
@@ -325,15 +320,14 @@ impl Decoder {
 
         for (i, (keypoints, keypoint_scores)) in pose_keypoints
             .into_iter()
-            .zip(pose_keypoint_scores.into_iter())
+            .zip(pose_keypoint_scores)
             .enumerate()
         {
             for (j, (&Point2f { x, y }, score)) in keypoints.iter().zip(keypoint_scores).enumerate()
             {
                 pose_keypoint_scores_arr[(i, j)] = score;
-                pose_keypoints_arr
-                    .slice_mut(s![i, j, ..])
-                    .assign(&array![x, y]);
+                pose_keypoints_arr[(i, j, 0)] = x;
+                pose_keypoints_arr[(i, j, 1)] = y;
             }
         }
         Ok((
@@ -387,6 +381,7 @@ fn build_bilinear_interpolation(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn sample_tensor_at_multiple_channels(
     tensor: &[f32],
     height: usize,
@@ -438,6 +433,7 @@ fn sample_tensor_at_single_channel(
     Ok(value)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn find_displaced_position(
     short_offsets: &[f32],
     mid_offsets: &[f32],
@@ -490,6 +486,7 @@ fn find_displaced_position(
     Ok(Point2f::new(x, y))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn backtrack_decode_pose<const N: usize>(
     scores: &[f32],
     short_offsets: &[f32],
@@ -624,8 +621,8 @@ fn perform_soft_keypoint_nms<const N: usize>(
         // the corresponding keypoints of the higher-scoring instances and
         // zero-out their contribution to the score of the current instance.
         keypoint_occluded.fill(false);
-        for j in 0..i {
-            let previous_index = decreasing_indices[j];
+
+        for &previous_index in decreasing_indices.iter().take(i) {
             find_overlapping_keypoints(
                 &all_keypoint_coords[current_index],
                 &all_keypoint_coords[previous_index],
@@ -637,6 +634,7 @@ fn perform_soft_keypoint_nms<const N: usize>(
         // scores, but we do not let them contribute to the instance score if they
         // have been non-maximum suppressed.
         decreasing_arg_sort(&all_keypoint_scores[current_index], &mut indices);
+
         let total_score = indices
             .iter()
             .take(topk)
@@ -672,8 +670,13 @@ impl crate::decode::Decoder for Decoder {
             .get_output_tensor(2)?
             .dequantized_with_scale(recip_output_stride)?;
 
-        let (pose_scores, keypoint_scores, keypoints) =
-            self.decode_all_poses(&heatmaps, &shorts, &mids, frame_height, frame_width)?;
+        let (pose_scores, keypoint_scores, keypoints) = self.decode_all_poses::<NUM_KEYPOINTS>(
+            &heatmaps,
+            &shorts,
+            &mids,
+            frame_height,
+            frame_width,
+        )?;
 
         crate::decode::reconstruct_from_arrays(
             keypoints.into(),
@@ -1033,7 +1036,7 @@ mod find_displaced_position_test {
             Point2f::new(5.840163, 5.755558),
         ];
 
-        let point_results = (0..expected_points.len())
+        for (point_result, expected_point) in (0..expected_points.len())
             .map(|i| {
                 find_displaced_position(
                     &short_offsets,
@@ -1047,10 +1050,10 @@ mod find_displaced_position_test {
                     target_id,
                     i,
                 )
+                .unwrap()
             })
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        for (point_result, expected_point) in point_results.into_iter().zip(expected_points) {
+            .zip(expected_points)
+        {
             assert_approx_eq!(point_result.x, expected_point.x);
             assert_approx_eq!(point_result.y, expected_point.y);
         }
