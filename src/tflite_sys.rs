@@ -3,4 +3,5 @@
 #![allow(non_snake_case)]
 #![allow(improper_ctypes)]
 #![allow(dead_code)]
+#![allow(deref_nullptr)]
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));

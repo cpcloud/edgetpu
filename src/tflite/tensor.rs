@@ -2,7 +2,8 @@ use crate::{
     error::{check_null, tflite_status_to_result, Error},
     tflite_sys,
 };
-use ndarray::{Array, ArrayView, IntoDimension};
+#[cfg(feature = "posenet_decoder")]
+use ndarray::{ArrayView, IntoDimension};
 use num_traits::ToPrimitive;
 use std::{convert::TryFrom, marker::PhantomData};
 
@@ -43,7 +44,11 @@ impl<'interp> Tensor<'interp> {
         })
     }
 
-    fn quantization_params(&self) -> tflite_sys::TfLiteQuantizationParams {
+    pub(crate) fn r#type(&self) -> tflite_sys::TfLiteType {
+        unsafe { (*self.tensor).type_ }
+    }
+
+    pub(crate) fn quantization_params(&self) -> tflite_sys::TfLiteQuantizationParams {
         unsafe { (*self.tensor).params }
     }
 
@@ -53,11 +58,17 @@ impl<'interp> Tensor<'interp> {
     ///
     /// The `self.tensor.data.raw` member must point to a valid array of `T`.
     #[cfg(feature = "posenet_decoder")]
-    pub(crate) unsafe fn as_slice<T>(&'interp self) -> &'interp [T]
-    where
-        T: Sized + Copy,
-    {
+    pub(crate) unsafe fn as_slice<T>(&'interp self) -> &'interp [T] {
         std::slice::from_raw_parts((*self.tensor).data.raw.cast::<T>(), self.len)
+    }
+
+    /// Mutable view of a tensor's data as a slice of `T` values.
+    pub(crate) fn as_u8_slice(&'interp mut self) -> Result<&'interp [u8], Error> {
+        let typ = self.r#type();
+        if typ != tflite_sys::TfLiteType::kTfLiteUInt8 {
+            return Err(Error::GetTensorSlice(typ));
+        }
+        Ok(unsafe { std::slice::from_raw_parts((*self.tensor).data.uint8, self.len) })
     }
 
     #[cfg(feature = "posenet_decoder")]
@@ -67,28 +78,30 @@ impl<'interp> Tensor<'interp> {
         dims: I,
     ) -> Result<ArrayView<'interp, T, I::Dim>, Error>
     where
-        T: Sized + Copy,
         I: IntoDimension,
     {
         ArrayView::from_shape(dims.into_dimension(), slice).map_err(Error::ConstructArrayView)
     }
 
-    pub(crate) fn as_ndarray_dequantized<T, I>(
-        &'interp self,
-        slice: &'interp [T],
-        dims: I,
-    ) -> Result<Array<f32, I::Dim>, Error>
-    where
-        T: Into<f32> + Clone + Sized + Copy,
-        I: IntoDimension,
-    {
-        let tflite_sys::TfLiteQuantizationParams { scale, zero_point } = self.quantization_params();
-        let zero_point = zero_point
-            .to_f32()
-            .expect("failed to convert zero point to f32");
-        Ok(ArrayView::from_shape(dims.into_dimension(), slice)
-            .map_err(Error::ConstructArrayView)?
-            .mapv(|v| (v.into() - zero_point) / scale))
+    pub(crate) fn dequantized(&'interp mut self) -> Result<Vec<f32>, Error> {
+        self.dequantized_with_scale(1.0)
+    }
+
+    pub(crate) fn dequantized_with_scale(
+        &'interp mut self,
+        mut scale: f32,
+    ) -> Result<Vec<f32>, Error> {
+        let tflite_sys::TfLiteQuantizationParams {
+            zero_point,
+            scale: quant_scale,
+        } = self.quantization_params();
+        scale *= quant_scale;
+        let zero_point = zero_point.to_f32().ok_or(Error::ConvertToF32)?;
+        Ok(self
+            .as_u8_slice()?
+            .iter()
+            .map(|&value| (f32::from(value) - zero_point) * scale)
+            .collect())
     }
 
     #[cfg(feature = "posenet_decoder")]

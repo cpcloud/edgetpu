@@ -32,6 +32,7 @@ pub(crate) enum Error {
     #[error("failed to get value of Mat::step1")]
     GetStep1(#[source] opencv::Error),
 
+    #[cfg(feature = "posenet_decoder")]
     #[error("failed to construct array view from TfLiteTensor")]
     ConstructArrayView(#[source] ndarray::ShapeError),
 
@@ -56,6 +57,7 @@ pub(crate) enum Error {
     #[error("failed to create interpreter, got null pointer")]
     CreateInterpreter,
 
+    #[cfg(feature = "gui")]
     #[error("failed to convert keypoint variant to usize: {0:?}")]
     KeypointVariantToUSize(crate::pose::KeypointKind),
 
@@ -78,16 +80,6 @@ pub(crate) enum Error {
     #[error("failed to construct delegate, got null pointer")]
     ConstructDelegate,
 
-    #[error("failed to reshape offsets from {0:?} to {1:?}")]
-    ReshapeOffsets(
-        #[source] ndarray::ShapeError,
-        (usize, usize, usize),
-        [usize; 4],
-    ),
-
-    #[error("failed to reshape raw_dsp")]
-    ReshapeRawDsp(#[source] ndarray::ShapeError),
-
     #[error("failed to convert usize index to i32 index")]
     ConvertUSizeToI32Index(#[source] std::num::TryFromIntError),
 
@@ -106,14 +98,17 @@ pub(crate) enum Error {
     #[error("failed to convert value to f32")]
     ConvertToF32,
 
-    #[error("failed to convert value to usize")]
-    ConvertToUSize,
-
     #[error("failed to construct ArrayView3 from Mat")]
     ConstructNDArrayFromMat(#[source] ndarray::ShapeError),
 
     #[error("failed to get ndarray as contiguous slice")]
     GetNDArrayAsSlice,
+
+    #[error("failed to construct NotNan: {1}")]
+    ConstructNotNan(#[source] ordered_float::FloatIsNan, f32),
+
+    #[error("tensor type is not valid for converting to slice: {0:?}")]
+    GetTensorSlice(tflite_sys::TfLiteType),
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {
