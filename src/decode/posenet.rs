@@ -16,7 +16,7 @@ impl crate::decode::Decoder for Decoder {
         // construct the output tensors
         let pose_keypoints = interp.get_output_tensor(0)?;
         let pose_keypoints = pose_keypoints.as_ndarray(
-            unsafe { pose_keypoints.as_f32() },
+            unsafe { pose_keypoints.as_slice::<f32>() },
             (
                 pose_keypoints.dim(1)?,
                 pose_keypoints.dim(2)?,
@@ -25,12 +25,14 @@ impl crate::decode::Decoder for Decoder {
         )?;
         let keypoint_scores = interp.get_output_tensor(1)?;
         let keypoint_scores = keypoint_scores.as_ndarray(
-            unsafe { keypoint_scores.as_f32() },
+            unsafe { keypoint_scores.as_slice::<f32>() },
             (keypoint_scores.dim(1)?, keypoint_scores.dim(2)?),
         )?;
         let pose_scores = interp.get_output_tensor(2)?;
-        let pose_scores =
-            pose_scores.as_ndarray(unsafe { pose_scores.as_f32() }, pose_scores.dim(1)?)?;
+        let pose_scores = pose_scores.as_ndarray(
+            unsafe { pose_scores.as_slice::<f32>() },
+            pose_scores.dim(1)?,
+        )?;
         crate::decode::reconstruct_from_arrays(
             pose_keypoints.into(),
             keypoint_scores.into(),

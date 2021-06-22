@@ -288,7 +288,7 @@ impl Decoder {
             .into_shape(new_shape)
             .map_err(|e| Error::ReshapeOffsets(e, offsets.dim(), new_shape))?
             .permuted_axes(TRANSPOSE_AXES)
-            .map(|&v| v.to_usize().unwrap());
+            .map(|&v| dbg!(v).to_usize().unwrap());
         let new_displacments_fwd = displacements_fwd
             .permuted_axes(TRANSPOSE_AXES)
             .map(|&v| v.to_usize().unwrap());
@@ -342,18 +342,10 @@ impl Decoder {
     }
 }
 
-fn dequantize(v: u8, scale: f32, zero_point: f32) -> f32 {
-    f32::from(v) * scale + zero_point
+#[inline]
+fn sigmoid(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
 }
-
-const HEATMAP_SCALE: f32 = 0.1157;
-const HEATMAP_ZERO_POINT: f32 = 204.0;
-
-const SHORT_OFFSETS_SCALE: f32 = 1.199291;
-const SHORT_OFFSETS_ZERO_POINT: f32 = 134.0;
-
-const MID_OFFSETS_SCALE: f32 = 2.820271;
-const MID_OFFSETS_ZERO_POINT: f32 = 147.0;
 
 impl crate::decode::Decoder for Decoder {
     fn expected_output_tensors(&self) -> usize {
@@ -370,30 +362,30 @@ impl crate::decode::Decoder for Decoder {
         let width = 1 + frame_width / output_stride;
 
         let heatmaps = interp.get_output_tensor(0)?;
-        let heatmaps = heatmaps
-            .as_ndarray(
-                unsafe { heatmaps.as_u8() },
-                (width, height, pose::NUM_KEYPOINTS),
-            )?
-            .mapv(|v| 1.0 / (1.0 + (-dequantize(v, HEATMAP_SCALE, HEATMAP_ZERO_POINT)).exp()));
+        let mut heatmaps = heatmaps.as_ndarray_dequantized(
+            unsafe { heatmaps.as_slice::<u8>() },
+            (width, height, pose::NUM_KEYPOINTS),
+        )?;
+        heatmaps.mapv_inplace(sigmoid);
+
+        let recip_output_stride = f32::from(self.output_stride).recip();
 
         let offsets = interp.get_output_tensor(1)?;
-        let offsets = offsets
-            .as_ndarray(
-                unsafe { offsets.as_u8() },
-                (width, height, 2 * pose::NUM_KEYPOINTS),
-            )?
-            .mapv(|v| dequantize(v, SHORT_OFFSETS_SCALE, SHORT_OFFSETS_ZERO_POINT));
+        let mut offsets = offsets.as_ndarray_dequantized(
+            unsafe { offsets.as_slice::<u8>() },
+            (width, height, 2 * pose::NUM_KEYPOINTS),
+        )?;
+        offsets.mapv_inplace(|v| v * recip_output_stride);
 
         let raw_dsp = interp.get_output_tensor(2)?;
-        let raw_dsp = raw_dsp
-            .as_ndarray(
-                unsafe { raw_dsp.as_u8() },
-                (1, width, height, 4 * usize::from(self.output_stride)),
+        let mut raw_dsp = raw_dsp
+            .as_ndarray_dequantized(
+                unsafe { raw_dsp.as_slice::<u8>() },
+                (width, height, 4 * usize::from(self.output_stride)),
             )?
             .into_shape((width, height, 4, usize::from(self.output_stride)))
-            .map_err(Error::ReshapeRawDsp)?
-            .mapv(|v| dequantize(v, MID_OFFSETS_SCALE, MID_OFFSETS_ZERO_POINT));
+            .map_err(Error::ReshapeRawDsp)?;
+        raw_dsp.mapv_inplace(|v| v * recip_output_stride);
 
         let fwd = raw_dsp.slice(s![.., .., ..2, ..]);
         let bwd = raw_dsp.slice(s![.., .., 2.., ..]);

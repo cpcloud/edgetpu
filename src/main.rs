@@ -210,7 +210,6 @@ fn main() -> Result<()> {
         "/home/cloud/src/edgetpu/test_couple.jpg",
         opencv::imgcodecs::IMREAD_COLOR,
     )?;
-    dbg!(in_frame.clone());
     let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)?.to_mat()?;
     let out_frame_size = out_frame.size()?;
 
