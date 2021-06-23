@@ -5,10 +5,10 @@
         "homepage": "",
         "owner": "nix-community",
         "repo": "fenix",
-        "rev": "9372555aee4c423a7ba59676eb89f662fa49e15b",
-        "sha256": "1iqghrdncqdabykf85qqs00h8m01jmfnpy0fi6xkgphnfnizy0y2",
+        "rev": "680f4789cea760239b69d6a2cb08e0293dcb6ef7",
+        "sha256": "1qwk3xjjk7czwmsafn3rccpb8x39cnv6lzbffrmcb1xiwpsmflq3",
         "type": "tarball",
-        "url": "https://github.com/nix-community/fenix/archive/9372555aee4c423a7ba59676eb89f662fa49e15b.tar.gz",
+        "url": "https://github.com/nix-community/fenix/archive/680f4789cea760239b69d6a2cb08e0293dcb6ef7.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "naersk": {
