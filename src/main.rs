@@ -79,9 +79,7 @@ fn draw_poses(
                     xys[index] = Some(point);
                     opencv::imgproc::circle(
                         out_frame,
-                        point
-                            .to()
-                            .ok_or_else(|| Error::ConvertPoint2fToPoint2i(point))?,
+                        point.to().ok_or(Error::ConvertPoint2fToPoint2i(point))?,
                         6,
                         Scalar::from(GREEN),
                         1,      // thickness
@@ -97,10 +95,10 @@ fn draw_poses(
                         out_frame,
                         a_point
                             .to()
-                            .ok_or_else(|| Error::ConvertPoint2fToPoint2i(a_point))?,
+                            .ok_or(Error::ConvertPoint2fToPoint2i(a_point))?,
                         b_point
                             .to()
-                            .ok_or_else(|| Error::ConvertPoint2fToPoint2i(b_point))?,
+                            .ok_or(Error::ConvertPoint2fToPoint2i(b_point))?,
                         Scalar::from(YELLOW),
                         2,      // thickness
                         LINE_8, // line_type
@@ -222,16 +220,12 @@ fn main() -> Result<()> {
         height.to_usize().unwrap()
     );
 
-    // let mut in_frame = Mat::zeros(
-    //     height.to_i32().expect("failed to convert height to i32"),
-    //     width.to_i32().expect("failed to convert width to i32"),
-    //     CV_8UC3,
-    // )?
-    // .to_mat()?;
-    let in_frame = opencv::imgcodecs::imread(
-        "/home/cloud/src/edgetpu/test_couple.jpg",
-        opencv::imgcodecs::IMREAD_COLOR,
-    )?;
+    let mut in_frame = Mat::zeros(
+        height.to_i32().expect("failed to convert height to i32"),
+        width.to_i32().expect("failed to convert width to i32"),
+        CV_8UC3,
+    )?
+    .to_mat()?;
     let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)?.to_mat()?;
     let out_frame_size = out_frame.size()?;
 
@@ -254,61 +248,33 @@ fn main() -> Result<()> {
     })
     .expect("Error setting Ctrl-C handler");
 
-    // while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")?
-    //     && running.load(Ordering::SeqCst)
-    // {
-    //     let frame_start = Instant::now();
-    //     // capture.read(&mut in_frame)?;
-    //     frame_duration += frame_start.elapsed();
-    //     nframes += 1;
-    //
-    //     resize(
-    //         &in_frame,
-    //         &mut out_frame,
-    //         out_frame_size,
-    //         0.0,
-    //         0.0,
-    //         INTER_LINEAR,
-    //     )?;
-    //     opencv::highgui::imshow("foo", &out_frame)?;
-    //
-    //     let (poses, timing) = engine.detect_poses(mat_to_ndarray(&out_frame)?)?;
-    //     draw_poses(
-    //         &poses,
-    //         threshold,
-    //         timing,
-    //         &mut out_frame,
-    //         frame_duration,
-    //         nframes,
-    //         &pb_model_cam_fps,
-    //     )?;
-    // }
-    let frame_start = Instant::now();
-    // capture.read(&mut in_frame)?;
-    frame_duration += frame_start.elapsed();
-    nframes += 1;
-
-    resize(
-        &in_frame,
-        &mut out_frame,
-        out_frame_size,
-        0.0,
-        0.0,
-        INTER_LINEAR,
-    )?;
-
-    let (poses, timing) = engine.detect_poses(mat_to_ndarray(&out_frame)?)?;
-    draw_poses(
-        &poses,
-        threshold,
-        timing,
-        &mut out_frame,
-        frame_duration,
-        nframes,
-        &pb_model_cam_fps,
-    )?;
     while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")?
         && running.load(Ordering::SeqCst)
-    {}
+    {
+        let frame_start = Instant::now();
+        capture.read(&mut in_frame)?;
+        frame_duration += frame_start.elapsed();
+        nframes += 1;
+
+        resize(
+            &in_frame,
+            &mut out_frame,
+            out_frame_size,
+            0.0,
+            0.0,
+            INTER_LINEAR,
+        )?;
+
+        let (poses, timing) = engine.detect_poses(mat_to_ndarray(&out_frame)?)?;
+        draw_poses(
+            &poses,
+            threshold,
+            timing,
+            &mut out_frame,
+            frame_duration,
+            nframes,
+            &pb_model_cam_fps,
+        )?;
+    }
     Ok(())
 }

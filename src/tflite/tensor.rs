@@ -109,7 +109,6 @@ impl<'interp> Tensor<'interp> {
             .collect())
     }
 
-    #[cfg(feature = "posenet_decoder")]
     pub(crate) fn dim(&self, index: usize) -> Result<usize, Error> {
         dim(self.tensor, index)
     }

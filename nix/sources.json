@@ -41,10 +41,10 @@
         "homepage": null,
         "owner": "cpcloud",
         "repo": "nixpkgs",
-        "rev": "848e85a29ab185337c32c33f12359faeac6e679d",
-        "sha256": "14cs1lpxlqmkr4dp094mj0gkrc8m56z9dqzrix0k7ayagq46azp7",
+        "rev": "21bfb502bc5e5069809ea763fcdff9552b1cd11b",
+        "sha256": "0swakzdhvjh535hynrd9712n6w034zk1h66kxgmh5bxq35pbamcb",
         "type": "tarball",
-        "url": "https://github.com/cpcloud/nixpkgs/archive/848e85a29ab185337c32c33f12359faeac6e679d.tar.gz",
+        "url": "https://github.com/cpcloud/nixpkgs/archive/21bfb502bc5e5069809ea763fcdff9552b1cd11b.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

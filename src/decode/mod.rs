@@ -8,7 +8,6 @@ pub(self) fn reconstruct_from_arrays(
     keypoint_scores: CowArray<f32, Ix2>,
     pose_scores: CowArray<f32, Ix1>,
 ) -> Result<Box<[pose::Pose]>, Error> {
-    eprintln!("{:#?}", pose_keypoints);
     pose_scores
         .indexed_iter()
         .zip(pose_keypoints.axis_iter(Axis(0)))

@@ -13,17 +13,23 @@ mod keypoint_priority_queue;
 mod keypoint_with_score;
 mod point;
 
+const DEFAULT_OUTPUT_STRIDE: &str = "16";
+const DEFAULT_MAX_POSE_DETECTIONS: &str = "100";
+const DEFAULT_SCORE_THRESHOLD: &str = "0.2";
+const DEFAULT_NMS_RADIUS: &str = "10";
+const DEFAULT_MID_SHORT_OFFSET_REFINEMENT_STEPS: &str = "5";
+
 #[derive(Debug, Clone, Copy, structopt::StructOpt)]
 pub(crate) struct Decoder {
-    #[structopt(short, long, default_value = "16")]
+    #[structopt(short, long, default_value = DEFAULT_OUTPUT_STRIDE)]
     pub(crate) output_stride: u8,
-    #[structopt(short = "-M", long, default_value = "100")]
+    #[structopt(short = "-M", long, default_value = DEFAULT_MAX_POSE_DETECTIONS)]
     pub(crate) max_pose_detections: usize,
-    #[structopt(short, long, default_value = "0.5")]
+    #[structopt(short, long, default_value = DEFAULT_SCORE_THRESHOLD)]
     pub(crate) score_threshold: f32,
-    #[structopt(short, long, default_value = "20")]
+    #[structopt(short, long, default_value = DEFAULT_NMS_RADIUS)]
     pub(crate) nms_radius: usize,
-    #[structopt(short = "-r", long, default_value = "5")]
+    #[structopt(short = "-r", long, default_value = DEFAULT_MID_SHORT_OFFSET_REFINEMENT_STEPS)]
     pub(crate) mid_short_offset_refinement_steps: usize,
 }
 
@@ -33,11 +39,13 @@ type PoseKeypointScores<const N: usize> = [f32; N];
 impl Default for Decoder {
     fn default() -> Self {
         Self {
-            output_stride: 16,
-            max_pose_detections: 100,
-            score_threshold: 0.5,
-            nms_radius: 20,
-            mid_short_offset_refinement_steps: 5,
+            output_stride: DEFAULT_OUTPUT_STRIDE.parse().unwrap(),
+            max_pose_detections: DEFAULT_MAX_POSE_DETECTIONS.parse().unwrap(),
+            score_threshold: DEFAULT_SCORE_THRESHOLD.parse().unwrap(),
+            nms_radius: DEFAULT_NMS_RADIUS.parse().unwrap(),
+            mid_short_offset_refinement_steps: DEFAULT_MID_SHORT_OFFSET_REFINEMENT_STEPS
+                .parse()
+                .unwrap(),
         }
     }
 }
@@ -164,7 +172,7 @@ impl Decoder {
 
         for index in decreasing_indices
             .into_iter()
-            .take_while(|&index| all_instance_scores[index] < score_threshold)
+            .take_while(|&index| all_instance_scores[index] >= score_threshold)
         {
             for k in 0..NUM_KEYPOINTS {
                 *pose_keypoints[pose_counter][k].y_mut() =
@@ -188,8 +196,8 @@ impl Decoder {
         {
             for (j, (point, score)) in keypoints.iter().zip(keypoint_scores).enumerate() {
                 pose_keypoint_scores_arr[(i, j)] = score;
-                pose_keypoints_arr[(i, j, 0)] = point.x();
-                pose_keypoints_arr[(i, j, 1)] = point.y();
+                pose_keypoints_arr[(i, j, 0)] = point.y();
+                pose_keypoints_arr[(i, j, 1)] = point.x();
             }
         }
         Ok((
@@ -300,7 +308,7 @@ fn sample_tensor_at_single_channel(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn find_displaced_position<const NUM_KEYPOINTS: usize, const NUM_EDGES: usize>(
+fn find_displaced_position(
     short_offsets: &[f32],
     mid_offsets: &[f32],
     height: usize,
@@ -355,20 +363,22 @@ fn find_displaced_position<const NUM_KEYPOINTS: usize, const NUM_EDGES: usize>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn backtrack_decode_pose<const NUM_KEYPOINTS: usize, const NUM_EDGES: usize>(
+fn backtrack_decode_pose<const N: usize>(
     scores: &[f32],
     short_offsets: &[f32],
     mid_offsets: &[f32],
     height: usize,
     width: usize,
+    num_keypoints: usize,
+    num_edges: usize,
     root: &KeypointWithScore,
     adjacency_list: &AdjacencyList,
     mid_short_offset_refinement_steps: usize,
-    pose_keypoints: &mut PoseKeypoints<NUM_KEYPOINTS>,
-    keypoint_scores: &mut PoseKeypointScores<NUM_KEYPOINTS>,
+    pose_keypoints: &mut PoseKeypoints<N>,
+    keypoint_scores: &mut PoseKeypointScores<N>,
 ) -> Result<(), Error> {
     let root_score =
-        sample_tensor_at_single_channel(scores, height, width, NUM_KEYPOINTS, root.point, root.id)?;
+        sample_tensor_at_single_channel(scores, height, width, num_keypoints, root.point, root.id)?;
 
     // Used in order to put candidate keypoints in a priority queue w.r.t. their
     // score. Keypoints with higher score have higher priority and will be
@@ -381,7 +391,7 @@ fn backtrack_decode_pose<const NUM_KEYPOINTS: usize, const NUM_EDGES: usize>(
     });
 
     // Keeps track of the keypoints whose position has already been decoded.
-    let mut keypoint_decoded = bitvec![0; NUM_KEYPOINTS];
+    let mut keypoint_decoded = bitvec![0; num_keypoints];
 
     // The top element in the queue is the next keypoint to be processed.
     while let Some(KeypointWithScore { point, id, score }) = decode_queue.pop() {
@@ -413,7 +423,7 @@ fn backtrack_decode_pose<const NUM_KEYPOINTS: usize, const NUM_EDGES: usize>(
                 edge_id += NUM_EDGES;
             }
 
-            let child_point = find_displaced_position::<NUM_EDGES>(
+            let child_point = find_displaced_position(
                 short_offsets,
                 mid_offsets,
                 height,
