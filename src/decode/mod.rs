@@ -35,10 +35,9 @@ pub(crate) trait Decoder {
     /// Return the number of expected_output_tensors the decoder expects to operate on.
     fn expected_output_tensors(&self) -> usize;
 
-    fn get_decoded_arrays<'a, 'b: 'a>(
-        &'a self,
-        interp: &'b mut tflite::Interpreter,
-        dims: (usize, usize),
+    fn get_decoded_arrays(
+        &self,
+        interp: &mut tflite::Interpreter,
     ) -> Result<Box<[pose::Pose]>, Error>;
 
     /// Validate that the model has the expected number of output tensors.
@@ -56,7 +55,6 @@ pub(crate) trait Decoder {
 }
 
 mod hand_rolled;
-mod point;
 #[cfg(feature = "posenet_decoder")]
 mod posenet;
 
@@ -73,11 +71,11 @@ impl Default for Decode {
     fn default() -> Self {
         #[cfg(feature = "posenet_decoder")]
         {
-            Self::Posenet(posenet::Decoder::default())
+            Self::Posenet(Default::default())
         }
         #[cfg(not(feature = "posenet_decoder"))]
         {
-            Self::HandRolled(hand_rolled::Decoder::default())
+            Self::HandRolled(Default::default())
         }
     }
 }
@@ -91,15 +89,14 @@ impl Decoder for Decode {
         }
     }
 
-    fn get_decoded_arrays<'a, 'b: 'a>(
-        &'a self,
-        interp: &'b mut tflite::Interpreter,
-        dims: (usize, usize),
+    fn get_decoded_arrays(
+        &self,
+        interp: &mut tflite::Interpreter,
     ) -> Result<Box<[pose::Pose]>, Error> {
         match self {
             #[cfg(feature = "posenet_decoder")]
-            Self::Posenet(d) => d.get_decoded_arrays(interp, dims),
-            Self::HandRolled(d) => d.get_decoded_arrays(interp, dims),
+            Self::Posenet(d) => d.get_decoded_arrays(interp),
+            Self::HandRolled(d) => d.get_decoded_arrays(interp),
         }
     }
 }

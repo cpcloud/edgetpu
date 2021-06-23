@@ -1,4 +1,4 @@
-use num_traits::cast::ToPrimitive;
+use num_traits::ToPrimitive;
 
 #[derive(Debug, Copy, Clone, num_derive::FromPrimitive, num_derive::ToPrimitive)]
 pub(crate) enum KeypointKind {

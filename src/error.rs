@@ -109,7 +109,7 @@ pub(crate) enum Error {
     #[error("failed to get ndarray as contiguous slice")]
     GetNDArrayAsSlice,
 
-    #[error("failed to construct NotNan: {1}")]
+    #[error("failed to construct NotNan from f32: {1}")]
     ConstructNotNan(#[source] ordered_float::FloatIsNan, f32),
 
     #[error("tensor type is not valid for converting to slice: {0:?}")]

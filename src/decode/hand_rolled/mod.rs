@@ -1,9 +1,17 @@
-use crate::{decode::point::Point, error::Error, pose, tflite};
+use crate::{error::Error, pose, tflite};
+use adjacency_list::{build_adjacency_list, AdjacencyList};
 use bitvec::prelude::*;
+use keypoint_priority_queue::KeypointPriorityQueue;
+use keypoint_with_score::KeypointWithScore;
 use ndarray::{Array, Array1, Array2, Array3};
 use num_traits::{cast::ToPrimitive, Zero};
 use ordered_float::NotNan;
-use std::cmp::Ordering;
+use point::Point;
+
+mod adjacency_list;
+mod keypoint_priority_queue;
+mod keypoint_with_score;
+mod point;
 
 #[derive(Debug, Clone, Copy, structopt::StructOpt)]
 pub(crate) struct Decoder {
@@ -34,149 +42,7 @@ impl Default for Decoder {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct KeypointWithScore {
-    point: Point,
-    id: usize,
-    score: NotNan<f32>,
-}
-
-impl Eq for KeypointWithScore {}
-
-impl PartialEq for KeypointWithScore {
-    fn eq(&self, other: &Self) -> bool {
-        self.score.eq(&other.score)
-    }
-}
-
-impl Ord for KeypointWithScore {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.score.cmp(&other.score)
-    }
-}
-
-impl PartialOrd for KeypointWithScore {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.score.partial_cmp(&other.score)
-    }
-}
-
-struct KeypointPriorityQueue(std::collections::BinaryHeap<KeypointWithScore>);
-
-impl KeypointPriorityQueue {
-    fn new() -> Self {
-        Self(Default::default())
-    }
-
-    fn push(&mut self, item: KeypointWithScore) {
-        self.0.push(item);
-    }
-
-    fn pop(&mut self) -> Option<KeypointWithScore> {
-        self.0.pop()
-    }
-
-    fn build_keypoint<const NUM_KEYPOINTS: usize>(
-        &mut self,
-        scores: &[f32],
-        short_offsets: &[f32],
-        height: usize,
-        width: usize,
-        score_threshold: f32,
-        local_maximum_radius: usize,
-    ) -> Result<(), Error> {
-        let mut score_index = 0;
-
-        for y in 0..height {
-            for x in 0..width {
-                let mut offset_index = 2 * score_index;
-
-                for id in 0..NUM_KEYPOINTS {
-                    let score = scores[score_index];
-                    if score >= score_threshold {
-                        let mut local_maximum = true;
-
-                        let y_start = y.saturating_sub(local_maximum_radius);
-                        let y_end = (y + local_maximum_radius).min(height);
-
-                        for y_current in y_start..y_end {
-                            let x_start = x.saturating_sub(local_maximum_radius);
-                            let x_end = (x + local_maximum_radius + 1).min(width);
-                            for x_current in x_start..x_end {
-                                if scores[y_current * width * NUM_KEYPOINTS
-                                    + x_current * NUM_KEYPOINTS
-                                    + id]
-                                    > score
-                                {
-                                    local_maximum = false;
-                                    break;
-                                }
-                            }
-                            if !local_maximum {
-                                break;
-                            }
-                        }
-
-                        if local_maximum {
-                            let dy = short_offsets[offset_index];
-                            let dx = short_offsets[offset_index + NUM_KEYPOINTS];
-                            let y_refined = (y.to_f32().ok_or(Error::ConvertToF32)? + dy)
-                                .clamp(0.0, height.to_f32().ok_or(Error::ConvertToF32)? - 1.0);
-                            let x_refined = (x.to_f32().ok_or(Error::ConvertToF32)? + dx)
-                                .clamp(0.0, width.to_f32().ok_or(Error::ConvertToF32)? - 1.0);
-                            self.push(KeypointWithScore {
-                                point: Point::new(x_refined, y_refined)?,
-                                id,
-                                score: NotNan::new(score)
-                                    .map_err(|e| Error::ConstructNotNan(e, score))?,
-                            })
-                        }
-                    }
-                    score_index += 1;
-                    offset_index += 1;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-const NUM_EDGES: usize = pose::constants::EDGE_LIST.len();
-
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
-struct AdjacencyList {
-    child_ids: Vec<Vec<usize>>,
-    edge_ids: Vec<Vec<usize>>,
-}
-
-impl AdjacencyList {
-    fn new(n: usize) -> Self {
-        Self {
-            child_ids: vec![vec![]; n],
-            edge_ids: vec![vec![]; n],
-        }
-    }
-}
-
-impl Default for AdjacencyList {
-    fn default() -> Self {
-        Self {
-            child_ids: Default::default(),
-            edge_ids: Default::default(),
-        }
-    }
-}
-
-fn build_adjacency_list() -> Result<AdjacencyList, Error> {
-    let mut adjacency_list = AdjacencyList::new(pose::NUM_KEYPOINTS);
-    for (k, (parent, child)) in pose::constants::EDGE_LIST.iter().enumerate() {
-        let parent_id = parent.idx()?;
-        let child_id = child.idx()?;
-        adjacency_list.child_ids[parent_id].push(child_id);
-        adjacency_list.edge_ids[parent_id].push(k);
-    }
-    Ok(adjacency_list)
-}
+const NUM_EDGES: usize = pose::constants::EDGE_LIST.len() / 2;
 
 fn decreasing_arg_sort(scores: &[f32], indices: &mut [usize]) {
     indices.iter_mut().enumerate().for_each(|(i, dst)| {
@@ -222,7 +88,7 @@ impl Decoder {
             local_maximum_radius,
         )?;
 
-        let adjacency_list = build_adjacency_list()?;
+        let adjacency_list = build_adjacency_list(NUM_KEYPOINTS)?;
         let topk = NUM_KEYPOINTS;
         let mut indices = [0; NUM_KEYPOINTS];
         let mut pose_counter = 0;
@@ -367,11 +233,15 @@ fn build_bilinear_interpolation(
 ) -> Result<(usize, usize, usize, usize, f32, f32), Error> {
     let (y_floor, y_ceil, y_lerp) = build_linear_interpolation(y, height)?;
     let (x_floor, x_ceil, x_lerp) = build_linear_interpolation(x, width)?;
+    let top_left = (y_floor * width + x_floor) * num_channels;
+    let top_right = (y_floor * width + x_ceil) * num_channels;
+    let bottom_left = (y_ceil * width + x_floor) * num_channels;
+    let bottom_right = (y_ceil * width + x_ceil) * num_channels;
     Ok((
-        (y_floor * width + x_floor) * num_channels,
-        (y_floor * width + x_ceil) * num_channels,
-        (y_ceil * width + x_floor) * num_channels,
-        (y_ceil * width + x_ceil) * num_channels,
+        top_left,
+        top_right,
+        bottom_left,
+        bottom_right,
         y_lerp,
         x_lerp,
     ))
@@ -430,7 +300,7 @@ fn sample_tensor_at_single_channel(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn find_displaced_position(
+fn find_displaced_position<const NUM_KEYPOINTS: usize, const NUM_EDGES: usize>(
     short_offsets: &[f32],
     mid_offsets: &[f32],
     height: usize,
@@ -485,22 +355,20 @@ fn find_displaced_position(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn backtrack_decode_pose<const N: usize>(
+fn backtrack_decode_pose<const NUM_KEYPOINTS: usize, const NUM_EDGES: usize>(
     scores: &[f32],
     short_offsets: &[f32],
     mid_offsets: &[f32],
     height: usize,
     width: usize,
-    num_keypoints: usize,
-    num_edges: usize,
     root: &KeypointWithScore,
     adjacency_list: &AdjacencyList,
     mid_short_offset_refinement_steps: usize,
-    pose_keypoints: &mut PoseKeypoints<N>,
-    keypoint_scores: &mut PoseKeypointScores<N>,
+    pose_keypoints: &mut PoseKeypoints<NUM_KEYPOINTS>,
+    keypoint_scores: &mut PoseKeypointScores<NUM_KEYPOINTS>,
 ) -> Result<(), Error> {
     let root_score =
-        sample_tensor_at_single_channel(scores, height, width, num_keypoints, root.point, root.id)?;
+        sample_tensor_at_single_channel(scores, height, width, NUM_KEYPOINTS, root.point, root.id)?;
 
     // Used in order to put candidate keypoints in a priority queue w.r.t. their
     // score. Keypoints with higher score have higher priority and will be
@@ -513,7 +381,7 @@ fn backtrack_decode_pose<const N: usize>(
     });
 
     // Keeps track of the keypoints whose position has already been decoded.
-    let mut keypoint_decoded = bitvec![0; num_keypoints];
+    let mut keypoint_decoded = bitvec![0; NUM_KEYPOINTS];
 
     // The top element in the queue is the next keypoint to be processed.
     while let Some(KeypointWithScore { point, id, score }) = decode_queue.pop() {
@@ -545,7 +413,7 @@ fn backtrack_decode_pose<const N: usize>(
                 edge_id += NUM_EDGES;
             }
 
-            let child_point = find_displaced_position(
+            let child_point = find_displaced_position::<NUM_EDGES>(
                 short_offsets,
                 mid_offsets,
                 height,
@@ -656,16 +524,18 @@ impl crate::decode::Decoder for Decoder {
         3
     }
 
-    fn get_decoded_arrays<'a, 'b: 'a>(
-        &'a self,
-        interp: &'b mut tflite::Interpreter,
-        (frame_width, frame_height): (usize, usize),
+    fn get_decoded_arrays(
+        &self,
+        interp: &mut tflite::Interpreter,
     ) -> Result<Box<[pose::Pose]>, Error> {
         use pose::NUM_KEYPOINTS;
 
         let recip_output_stride = f32::from(self.output_stride).recip();
 
-        let heatmaps = interp.get_output_tensor(0)?.dequantized()?;
+        let mut heatmap_tensor = interp.get_output_tensor(0)?;
+        let frame_height = heatmap_tensor.dim(1)?;
+        let frame_width = heatmap_tensor.dim(2)?;
+        let heatmaps = heatmap_tensor.dequantized()?;
         let shorts = interp
             .get_output_tensor(1)?
             .dequantized_with_scale(recip_output_stride)?;
@@ -718,17 +588,6 @@ mod tests {
             let mut indices = vec![0; scores.len()];
             decreasing_arg_sort(&scores, &mut indices);
             assert_eq!(indices, vec![0, 3, 4, 2, 1]);
-        }
-    }
-
-    mod compute_squared_distance_tests {
-        use super::Point;
-
-        #[test]
-        fn xy_points() {
-            let a = Point::new(0.5, 0.5).unwrap();
-            let b = Point::new(1.0, 1.0).unwrap();
-            assert_eq!(a.squared_distance(b), 0.5);
         }
     }
 
@@ -1056,55 +915,6 @@ mod tests {
         }
     }
 
-    mod build_adjacency_list_tests {
-        use super::{build_adjacency_list, AdjacencyList};
-
-        #[test]
-        fn build_is_valid() {
-            let mut expected_adjacency_list = AdjacencyList::default();
-            expected_adjacency_list.child_ids = vec![
-                vec![1, 2, 5, 6],
-                vec![3, 0],
-                vec![4, 0],
-                vec![1],
-                vec![2],
-                vec![7, 11, 0],
-                vec![8, 12, 0],
-                vec![9, 5],
-                vec![10, 6],
-                vec![7],
-                vec![8],
-                vec![13, 5],
-                vec![14, 6],
-                vec![15, 11],
-                vec![16, 12],
-                vec![13],
-                vec![14],
-            ];
-            expected_adjacency_list.edge_ids = vec![
-                vec![0, 2, 4, 10],
-                vec![1, 16],
-                vec![3, 18],
-                vec![17],
-                vec![19],
-                vec![5, 7, 20],
-                vec![11, 13, 26],
-                vec![6, 21],
-                vec![12, 27],
-                vec![22],
-                vec![28],
-                vec![8, 23],
-                vec![14, 29],
-                vec![9, 24],
-                vec![15, 30],
-                vec![25],
-                vec![31],
-            ];
-            let adjacency_list = build_adjacency_list().unwrap();
-            assert_eq!(adjacency_list, expected_adjacency_list);
-        }
-    }
-
     mod backtrack_decode_pose_tests {
         use super::{
             backtrack_decode_pose, AdjacencyList, KeypointWithScore, Point, PoseKeypointScores,
@@ -1169,117 +979,6 @@ mod tests {
                 assert_eq!(coord, expected_coord);
                 assert_approx_eq!(score, 0.8);
             }
-        }
-    }
-
-    mod build_keypoint_with_score_queue_tests {
-        use super::{KeypointPriorityQueue, KeypointWithScore, Point};
-        use ndarray::Array;
-        use num_traits::cast::ToPrimitive;
-        use ordered_float::NotNan;
-
-        #[test]
-        fn build_is_valid_with_threshold() {
-            const HEIGHT: usize = 5;
-            const WIDTH: usize = 4;
-            const NUM_KEYPOINTS: usize = 3;
-
-            let mut scores = Array::zeros((HEIGHT, WIDTH, NUM_KEYPOINTS));
-            let p1 = KeypointWithScore {
-                point: Point::new(1.0, 2.0).unwrap(),
-                id: 1,
-                score: NotNan::new(1.0).unwrap(),
-            };
-            let p2 = KeypointWithScore {
-                point: Point::new(3.0, 0.0).unwrap(),
-                id: 2,
-                score: NotNan::new(1.0).unwrap(),
-            };
-            scores[(
-                p1.point.y().to_usize().unwrap(),
-                p1.point.x().to_usize().unwrap(),
-                p1.id,
-            )] = p1.score.into_inner();
-            scores[(
-                p2.point.y().to_usize().unwrap(),
-                p2.point.x().to_usize().unwrap(),
-                p2.id,
-            )] = p1.score.into_inner();
-
-            let short_offsets = Array::ones((HEIGHT, WIDTH, NUM_KEYPOINTS, 2));
-            let mut queue = KeypointPriorityQueue::new();
-            queue
-                .build_keypoint::<NUM_KEYPOINTS>(
-                    scores.as_slice().unwrap(),
-                    short_offsets.as_slice().unwrap(),
-                    HEIGHT,
-                    WIDTH,
-                    0.5,
-                    1,
-                )
-                .unwrap();
-            assert_eq!(queue.0.len(), 2);
-        }
-
-        #[test]
-        fn build_is_valid_scores_correct() {
-            const HEIGHT: usize = 5;
-            const WIDTH: usize = 4;
-            const NUM_KEYPOINTS: usize = 3;
-
-            let mut scores = Array::zeros((HEIGHT, WIDTH, NUM_KEYPOINTS));
-            let p1 = KeypointWithScore {
-                point: Point::new(2.0, 1.0).unwrap(),
-                id: 2,
-                score: NotNan::new(1.0).unwrap(),
-            };
-            let p2 = KeypointWithScore {
-                point: Point::new(0.0, 3.0).unwrap(),
-                id: 1,
-                score: NotNan::new(2.0).unwrap(),
-            };
-            scores[(
-                p1.point.y().to_usize().unwrap(),
-                p1.point.x().to_usize().unwrap(),
-                p1.id,
-            )] = p1.score.into_inner();
-            scores[(
-                p2.point.y().to_usize().unwrap(),
-                p2.point.x().to_usize().unwrap(),
-                p2.id,
-            )] = p2.score.into_inner();
-
-            let short_offsets = Array::ones((HEIGHT, WIDTH, NUM_KEYPOINTS, 2));
-            let expected_keypoint1 = KeypointWithScore {
-                point: p1.point + Point::new(1.0, 1.0).unwrap(),
-                id: p1.id,
-                score: p1.score,
-            };
-            let expected_keypoint2 = KeypointWithScore {
-                point: p2.point + Point::new(1.0, 1.0).unwrap(),
-                id: p2.id,
-                score: p2.score,
-            };
-            let mut queue = KeypointPriorityQueue::new();
-            queue
-                .build_keypoint::<NUM_KEYPOINTS>(
-                    scores.as_slice().unwrap(),
-                    short_offsets.as_slice().unwrap(),
-                    HEIGHT,
-                    WIDTH,
-                    0.5,
-                    1,
-                )
-                .unwrap();
-            let top = queue.pop().unwrap();
-            assert_eq!(top.score, expected_keypoint2.score);
-            assert_eq!(top.point, expected_keypoint2.point);
-            assert_eq!(top.id, expected_keypoint2.id);
-
-            let top = queue.pop().unwrap();
-            assert_eq!(top.score, expected_keypoint1.score);
-            assert_eq!(top.point, expected_keypoint1.point);
-            assert_eq!(top.id, expected_keypoint1.id);
         }
     }
 

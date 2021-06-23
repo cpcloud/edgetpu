@@ -58,8 +58,12 @@ impl<'interp> Tensor<'interp> {
     ///
     /// The `self.tensor.data.raw` member must point to a valid array of `T`.
     #[cfg(feature = "posenet_decoder")]
-    pub(crate) unsafe fn as_slice<T>(&'interp self) -> &'interp [T] {
-        std::slice::from_raw_parts((*self.tensor).data.raw.cast::<T>(), self.len)
+    pub(crate) fn as_f32_slice(&'interp self) -> Result<&'interp [f32], Error> {
+        let typ = self.r#type();
+        if typ != tflite_sys::TfLiteType::kTfLiteFloat32 {
+            return Err(Error::GetTensorSlice(typ));
+        }
+        Ok(unsafe { std::slice::from_raw_parts((*self.tensor).data.f, self.len) })
     }
 
     /// Mutable view of a tensor's data as a slice of `T` values.
@@ -83,6 +87,7 @@ impl<'interp> Tensor<'interp> {
         ArrayView::from_shape(dims.into_dimension(), slice).map_err(Error::ConstructArrayView)
     }
 
+    #[inline]
     pub(crate) fn dequantized(&'interp mut self) -> Result<Vec<f32>, Error> {
         self.dequantized_with_scale(1.0)
     }

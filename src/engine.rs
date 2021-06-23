@@ -58,10 +58,8 @@ where
         input: ArrayView3<'b, u8>,
     ) -> Result<(Box<[pose::Pose]>, Timing), Error> {
         self.infer(input)?;
-        let (rows, cols, _) = input.dim();
         Ok((
-            self.decoder
-                .get_decoded_arrays(&mut self.interpreter, (rows, cols))?,
+            self.decoder.get_decoded_arrays(&mut self.interpreter)?,
             self.timing,
         ))
     }

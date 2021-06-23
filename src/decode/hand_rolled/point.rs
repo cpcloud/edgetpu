@@ -3,7 +3,7 @@ use ordered_float::NotNan;
 use std::ops::{Add, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
-pub(in crate::decode) struct Point {
+pub(super) struct Point {
     x: f32,
     y: f32,
 }
@@ -70,5 +70,17 @@ impl Add for Point {
             x: self.x + rhs.x,
             y: self.y + rhs.y,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Point;
+
+    #[test]
+    fn xy_points() {
+        let a = Point::new(0.5, 0.5).unwrap();
+        let b = Point::new(1.0, 1.0).unwrap();
+        assert_eq!(a.squared_distance(b), 0.5);
     }
 }

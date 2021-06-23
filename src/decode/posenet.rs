@@ -8,15 +8,14 @@ impl crate::decode::Decoder for Decoder {
         4
     }
 
-    fn get_decoded_arrays<'a, 'b: 'a>(
-        &'a self,
-        interp: &'b mut tflite::Interpreter,
-        (_width, _height): (usize, usize),
+    fn get_decoded_arrays(
+        &self,
+        interp: &mut tflite::Interpreter,
     ) -> Result<Box<[pose::Pose]>, Error> {
         // construct the output tensors
         let pose_keypoints = interp.get_output_tensor(0)?;
         let pose_keypoints = pose_keypoints.as_ndarray(
-            unsafe { pose_keypoints.as_slice::<f32>() },
+            pose_keypoints.as_f32_slice()?,
             (
                 pose_keypoints.dim(1)?,
                 pose_keypoints.dim(2)?,
@@ -25,14 +24,12 @@ impl crate::decode::Decoder for Decoder {
         )?;
         let keypoint_scores = interp.get_output_tensor(1)?;
         let keypoint_scores = keypoint_scores.as_ndarray(
-            unsafe { keypoint_scores.as_slice::<f32>() },
+            keypoint_scores.as_f32_slice()?,
             (keypoint_scores.dim(1)?, keypoint_scores.dim(2)?),
         )?;
         let pose_scores = interp.get_output_tensor(2)?;
-        let pose_scores = pose_scores.as_ndarray(
-            unsafe { pose_scores.as_slice::<f32>() },
-            pose_scores.dim(1)?,
-        )?;
+        let pose_scores =
+            pose_scores.as_ndarray(pose_scores.as_f32_slice()?, pose_scores.dim(1)?)?;
         crate::decode::reconstruct_from_arrays(
             pose_keypoints.into(),
             keypoint_scores.into(),
