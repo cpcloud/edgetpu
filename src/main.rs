@@ -8,7 +8,7 @@ use num_traits::cast::ToPrimitive;
 use opencv::{
     core::{Mat, CV_8UC3},
     imgproc::{resize, INTER_LINEAR},
-    prelude::*,
+    prelude::{MatExprTrait, MatTrait, MatTraitManual, VideoCaptureTrait},
     videoio::{VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, CAP_V4L2},
 };
 use std::{
@@ -41,8 +41,8 @@ fn draw_poses(
     frame_duration: Duration,
     nframes: usize,
     pb_model_cam_fps: &indicatif::ProgressBar,
-) -> Result<()> {
-    let nframes = nframes.to_f64().unwrap();
+) -> Result<(), Error> {
+    let nframes = nframes.to_f64().ok_or(Error::ConvertToF64)?;
     let fps_text = format!(
         "FPS => model: {:.1}, cam: {:.1}",
         nframes / timing.inference.as_secs_f64(),
@@ -52,55 +52,77 @@ fn draw_poses(
     #[cfg(feature = "gui")]
     {
         use opencv::{
-            core::{Point2i, Scalar},
+            core::Scalar,
             imgproc::{FONT_HERSHEY_SIMPLEX, LINE_8, LINE_AA},
         };
+
+        const GREEN: (f64, f64, f64) = (0.0, 255.0, 0.0);
+        const YELLOW: (f64, f64, f64) = (0.0, 255.0, 255.0);
+        const WHITE: (f64, f64, f64) = (255.0, 255.0, 255.0);
 
         for pose in poses {
             let mut xys = [None; pose::NUM_KEYPOINTS];
 
-            for keypoint in pose.keypoints {
-                if keypoint.score >= threshold && keypoint.kind.is_some() {
-                    let index = keypoint.kind.unwrap().idx()?;
-                    xys[index] = Some(keypoint.point);
+            pose.keypoints
+                .iter()
+                .filter_map(|&pose::Keypoint { kind, score, point }| {
+                    kind.and_then(|kind| {
+                        if score >= threshold {
+                            Some((kind, point))
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .try_for_each(|(kind, point)| {
+                    let index = kind.idx()?;
+                    xys[index] = Some(point);
                     opencv::imgproc::circle(
                         out_frame,
-                        Point2i::new(keypoint.point.x as i32, keypoint.point.y as i32),
+                        point
+                            .to()
+                            .ok_or_else(|| Error::ConvertPoint2fToPoint2i(point))?,
                         6,
-                        Scalar::from((0.0, 255.0, 0.0)),
+                        Scalar::from(GREEN),
                         1,      // thickness
                         LINE_8, // line_type
                         0,      // shift
-                    )?;
-                }
-            }
+                    )
+                    .map_err(Error::DrawCircle)
+                })?;
 
             for (a, b) in pose::constants::KEYPOINT_EDGES {
                 if let (Some(a_point), Some(b_point)) = (xys[a.idx()?], xys[b.idx()?]) {
                     opencv::imgproc::line(
                         out_frame,
-                        Point2i::new(a_point.x as i32, a_point.y as i32),
-                        Point2i::new(b_point.x as i32, b_point.y as i32),
-                        Scalar::from((0.0, 255.0, 255.0)),
+                        a_point
+                            .to()
+                            .ok_or_else(|| Error::ConvertPoint2fToPoint2i(a_point))?,
+                        b_point
+                            .to()
+                            .ok_or_else(|| Error::ConvertPoint2fToPoint2i(b_point))?,
+                        Scalar::from(YELLOW),
                         2,      // thickness
                         LINE_8, // line_type
                         0,      // shift
-                    )?;
+                    )
+                    .map_err(Error::DrawLine)?;
                 }
             }
         }
         opencv::imgproc::put_text(
             out_frame,
             &fps_text,
-            Point2i::new(0, 15),
+            opencv::core::Point2i::new(0, 15),
             FONT_HERSHEY_SIMPLEX,
             0.5,
-            Scalar::from((38.0, 0.0, 255.0)),
+            Scalar::from(WHITE),
             1,       // thickness
             LINE_AA, // line_type
             false,   // bottom_left_origin
-        )?;
-        opencv::highgui::imshow("poses", out_frame)?;
+        )
+        .map_err(Error::PutText)?;
+        opencv::highgui::imshow("poses", out_frame).map_err(Error::ImShow)?;
     }
 
     pb_model_cam_fps.set_message(fps_text);

@@ -57,7 +57,6 @@ pub(crate) enum Error {
     #[error("failed to create interpreter, got null pointer")]
     CreateInterpreter,
 
-    #[cfg(feature = "gui")]
     #[error("failed to convert keypoint variant to usize: {0:?}")]
     KeypointVariantToUSize(crate::pose::KeypointKind),
 
@@ -98,6 +97,12 @@ pub(crate) enum Error {
     #[error("failed to convert value to f32")]
     ConvertToF32,
 
+    #[error("failed to convert value to f64")]
+    ConvertToF64,
+
+    #[error("failed to convert value to usize")]
+    ConvertToUSize,
+
     #[error("failed to construct ArrayView3 from Mat")]
     ConstructNDArrayFromMat(#[source] ndarray::ShapeError),
 
@@ -109,6 +114,21 @@ pub(crate) enum Error {
 
     #[error("tensor type is not valid for converting to slice: {0:?}")]
     GetTensorSlice(tflite_sys::TfLiteType),
+
+    #[error("failed to draw line")]
+    DrawLine(#[source] opencv::Error),
+
+    #[error("failed to draw circle")]
+    DrawCircle(#[source] opencv::Error),
+
+    #[error("failed to draw text")]
+    PutText(#[source] opencv::Error),
+
+    #[error("failed to show image")]
+    ImShow(#[source] opencv::Error),
+
+    #[error("failed to convert Point2f {0:?} to Point2i")]
+    ConvertPoint2fToPoint2i(opencv::core::Point2f),
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {

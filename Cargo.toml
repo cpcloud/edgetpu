@@ -11,6 +11,7 @@ posenet_decoder = []
 
 [dependencies]
 anyhow = "1"
+bitvec = "0.22.3"
 ctrlc = "3"
 indicatif = "0.16"
 ndarray = "0.15"

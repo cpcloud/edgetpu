@@ -1,4 +1,3 @@
-#[cfg(feature = "gui")]
 use num_traits::cast::ToPrimitive;
 
 #[derive(Debug, Copy, Clone, num_derive::FromPrimitive, num_derive::ToPrimitive)]
@@ -22,7 +21,6 @@ pub(crate) enum KeypointKind {
     RightAnkle,
 }
 
-#[cfg(feature = "gui")]
 impl KeypointKind {
     pub(crate) fn idx(self) -> Result<usize, crate::error::Error> {
         self.to_usize()

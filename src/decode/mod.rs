@@ -56,6 +56,7 @@ pub(crate) trait Decoder {
 }
 
 mod hand_rolled;
+mod point;
 #[cfg(feature = "posenet_decoder")]
 mod posenet;
 
