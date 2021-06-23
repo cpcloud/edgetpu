@@ -23,7 +23,7 @@ const DEFAULT_MID_SHORT_OFFSET_REFINEMENT_STEPS: &str = "5";
 pub(crate) struct Decoder {
     #[structopt(short, long, default_value = DEFAULT_OUTPUT_STRIDE)]
     pub(crate) output_stride: u8,
-    #[structopt(short = "-M", long, default_value = DEFAULT_MAX_POSE_DETECTIONS)]
+    #[structopt(short = "-d", long, default_value = DEFAULT_MAX_POSE_DETECTIONS)]
     pub(crate) max_pose_detections: usize,
     #[structopt(short, long, default_value = DEFAULT_SCORE_THRESHOLD)]
     pub(crate) score_threshold: f32,
