@@ -1,28 +1,32 @@
+from typing import IO
 import ujson as json
 import subprocess
 import tempfile
 import itertools
+import sys
 from pathlib import Path
 
 import click
 
 
-def tflite_to_json(
-    flatbuffer_model_path: str, json_output_dir: str, fbs_schema: str
-) -> None:
-    subprocess.check_output(
-        [
-            "flatc",
-            "--json",
-            "--strict-json",
-            "--defaults-json",
-            "-o",
-            json_output_dir,
-            fbs_schema,
-            "--",
-            flatbuffer_model_path,
-        ],
-    )
+def tflite_to_json(data: IO[bytes], json_output_dir: Path, fbs_schema: Path) -> Path:
+    with tempfile.NamedTemporaryFile(mode="r+b") as f:
+        f.write(data.read())
+        f.seek(0)
+        subprocess.check_output(
+            [
+                "flatc",
+                "--json",
+                "--strict-json",
+                "--defaults-json",
+                "-o",
+                str(json_output_dir),
+                str(fbs_schema),
+                "--",
+                f.name,
+            ],
+        )
+    return next(json_output_dir.glob("*.json"))
 
 
 def json_to_tflite(json_model_path: str, output_dir: str, fbs_schema: str) -> None:
@@ -57,30 +61,15 @@ def delete_decoder_from_json(path: Path):
 
 
 @click.command()
-@click.option("-i", "--input", type=click.Path(exists=True), required=True)
-@click.option("-o", "--output-dir", type=click.Path(), required=True)
+@click.option("-i", "--input", type=click.File("rb"), default=sys.stdin.buffer)
+@click.option("-o", "--output", type=click.File("wb"), default=sys.stdout.buffer)
 @click.option("-s", "--fbs-schema", type=click.Path(exists=True), required=True)
-def main(input: str, output_dir: str, fbs_schema: str) -> None:
+def main(input: IO[bytes], output: IO[bytes], fbs_schema: str) -> None:
     """Remove the decoding step from a pose edgetpu model."""
 
-    print("converting tflite to JSON")
     with tempfile.TemporaryDirectory() as json_output_dir:
-        tflite_to_json(input, json_output_dir, fbs_schema)
-
-        model_path = Path(input)
-        model_basename = model_path.with_suffix(".json").name
-        output_model_basename = f"{model_path.with_suffix('').name}_no_decoder.tflite"
-        input_json_path = Path(json_output_dir) / model_basename
-
-        print("removing decoder")
-        model = delete_decoder_from_json(input_json_path)
-
-        output_json_path = Path(json_output_dir) / output_model_basename
-        with output_json_path.open("w") as f:
-            json.dump(model, f)
-
-        print("converting JSON to tflite")
-        json_to_tflite(str(output_json_path), output_dir, fbs_schema)
+        s = tflite_to_json(input, Path(json_output_dir), Path(fbs_schema)).read_bytes()
+    output.write(s)
 
 
 if __name__ == "__main__":
