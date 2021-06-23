@@ -115,18 +115,23 @@ pub(crate) enum Error {
     #[error("tensor type is not valid for converting to slice: {0:?}")]
     GetTensorSlice(tflite_sys::TfLiteType),
 
+    #[cfg(feature = "gui")]
     #[error("failed to draw line")]
     DrawLine(#[source] opencv::Error),
 
+    #[cfg(feature = "gui")]
     #[error("failed to draw circle")]
     DrawCircle(#[source] opencv::Error),
 
+    #[cfg(feature = "gui")]
     #[error("failed to draw text")]
     PutText(#[source] opencv::Error),
 
+    #[cfg(feature = "gui")]
     #[error("failed to show image")]
     ImShow(#[source] opencv::Error),
 
+    #[cfg(feature = "gui")]
     #[error("failed to convert Point2f {0:?} to Point2i")]
     ConvertPoint2fToPoint2i(opencv::core::Point2f),
 }
