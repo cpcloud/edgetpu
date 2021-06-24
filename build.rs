@@ -41,8 +41,15 @@ fn main() -> Result<()> {
 
     bindings
         .generate()
-        .unwrap()
-        .write_to_file(PathBuf::from(std::env::var("OUT_DIR")?).join("bindings.rs"))?;
+        .map_err(|_| anyhow!("unable to generate bindings"))?
+        .write_to_file(
+            PathBuf::from(
+                std::env::var("OUT_DIR").context("OUT_DIR environment variabe not defined")?,
+            )
+            .join("bindings.rs"),
+        )
+        .context("failed to write bindings to file")?;
+
 
     Ok(())
 }
