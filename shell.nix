@@ -21,6 +21,7 @@ pkgs.mkShell {
     cargo-bloat
     clang_10
     flatbuffers
+    glog
     libcoral
     libedgetpu
     libv4l
