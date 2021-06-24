@@ -1,7 +1,6 @@
 let
   pkgs = import ./nix;
   sources = import ./nix/sources.nix;
-  niv = (import sources.niv { }).niv;
   pythonEnv = pkgs.python3.withPackages(p: with p; [
     click
     ipdb
@@ -14,7 +13,8 @@ let
 in
 pkgs.mkShell {
   name = "edgetpu";
-  buildInputs = [ niv ] ++ (with pkgs; [
+  buildInputs = with pkgs; [
+    niv
     abseil-cpp
     cargo-edit
     cargo-udeps
@@ -33,7 +33,7 @@ pkgs.mkShell {
     tensorflow-lite
     v4l-utils
     pythonEnv
-  ]);
+  ];
 
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
   CLANG_PATH = "${pkgs.clang_10}/bin/clang";

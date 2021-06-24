@@ -134,6 +134,11 @@ pub(crate) enum Error {
     #[cfg(feature = "gui")]
     #[error("failed to convert Point2f {0:?} to Point2i")]
     ConvertPoint2fToPoint2i(opencv::core::Point2f),
+
+    #[error("failed to send pipelined output tensors to channel")]
+    SendPipelinedOutputTensors(
+        #[error] std::sync::mpsc::SendError<Vec<crate::coral::PipelineTensor>>,
+    ),
 }
 
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {

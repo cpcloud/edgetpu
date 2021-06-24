@@ -22,6 +22,7 @@ use std::{
 };
 use structopt::StructOpt;
 
+mod coral;
 mod decode;
 mod edgetpu;
 mod engine;
