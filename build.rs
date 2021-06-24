@@ -1,14 +1,14 @@
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use std::path::PathBuf;
 
-const LIBS: &[&str] = &["opencv4", "edgetpu", "tensorflow-lite"];
+const LIBS: &[&str] = &["opencv4", "edgetpu", "tensorflow-lite", "coral"];
 
 fn main() -> Result<()> {
+    println!("cargo:rustc-link-lib=coral");
     println!("cargo:rustc-link-lib=edgetpu");
-    println!("cargo:rustc-link-lib=static=tensorflow-lite");
-
     #[cfg(feature = "posenet_decoder")]
     println!("cargo:rustc-link-lib=posenet_decoder");
+    println!("cargo:rustc-link-lib=static=tensorflow-lite");
 
     println!("cargo:rerun-if-changed=wrapper.h");
 
