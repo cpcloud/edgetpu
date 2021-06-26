@@ -1,9 +1,8 @@
 #![feature(variant_count)]
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use error::Error;
 use indicatif::{ProgressBar, ProgressStyle};
-use ndarray::ArrayView3;
 use num_traits::cast::ToPrimitive;
 use opencv::{
     core::{Mat, CV_8UC3},
@@ -21,6 +20,8 @@ use std::{
     time::{Duration, Instant},
 };
 use structopt::StructOpt;
+use tracing::info;
+use tracing_subscriber::layer::SubscriberExt;
 
 mod coral;
 mod decode;
@@ -140,11 +141,23 @@ fn wait_q(_delay_ms: i32) -> Result<bool> {
     Ok(true)
 }
 
+/// Convert an input Mat to a slice of bytes.
+fn mat_to_slice(input: &Mat) -> Result<&[u8], Error> {
+    let step = input.step1(0).map_err(Error::GetStep1)?
+        * input.elem_size1().map_err(Error::GetElemSize1)?;
+    let rows = usize::try_from(input.rows()).map_err(Error::ConvertRowsToUsize)?;
+    let num_elements = step * rows;
+
+    // copy the bytes into the input tensor
+    let raw_data = input.data().map_err(Error::GetMatData)? as _;
+    Ok(unsafe { std::slice::from_raw_parts(raw_data, num_elements) })
+}
+
 #[derive(structopt::StructOpt)]
 struct Opt {
     /// Path to a Tensorflow Lite edgetpu model.
-    #[structopt()]
-    model: PathBuf,
+    #[structopt(required = true)]
+    models: Vec<PathBuf>,
 
     /// A v42l compatible device: /dev/videoDEVICE
     #[structopt(short, long, default_value = "0")]
@@ -174,34 +187,22 @@ struct Opt {
     #[structopt(short = "-W", long, default_value = "1")]
     wait_key_ms: i32,
 
+    #[structopt(short, long, default_value = "info", env = "RUST_LOG")]
+    log_level: tracing_subscriber::filter::EnvFilter,
+
     #[structopt(subcommand)]
     decoder: decode::Decode,
-}
-
-fn mat_to_ndarray(input: &Mat) -> Result<ArrayView3<u8>, Error> {
-    let step = input.step1(0).map_err(Error::GetStep1)?
-        * input.elem_size1().map_err(Error::GetElemSize1)?;
-    let rows = usize::try_from(input.rows()).map_err(Error::ConvertRowsToUsize)?;
-    let num_elements = step * rows;
-
-    // copy the bytes into the input tensor
-    let raw_data = input.data().map_err(Error::GetMatData)? as _;
-    let data = unsafe { std::slice::from_raw_parts(raw_data, num_elements) };
-    ArrayView3::from_shape(
-        (
-            usize::try_from(input.rows()).map_err(Error::ConvertDimI32ToUSize)?,
-            usize::try_from(input.cols()).map_err(Error::ConvertDimI32ToUSize)?,
-            usize::try_from(input.channels().map_err(Error::GetChannels)?)
-                .map_err(Error::ConvertDimI32ToUSize)?,
-        ),
-        data,
-    )
-    .map_err(Error::ConstructNDArrayFromMat)
 }
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
     let threshold = opt.threshold;
+
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer())
+            .with(opt.log_level),
+    )?;
 
     let mut capture = VideoCapture::new(opt.device, CAP_V4L2)?;
 
@@ -215,10 +216,11 @@ fn main() -> Result<()> {
 
     let width = capture.get(CAP_PROP_FRAME_WIDTH)?;
     let height = capture.get(CAP_PROP_FRAME_HEIGHT)?;
-    println!(
-        "width: {}, height: {}",
-        width.to_usize().unwrap(),
-        height.to_usize().unwrap()
+
+    info!(
+        message = "got dimensions from video capture",
+        width = width.to_i64().unwrap(),
+        height = height.to_i64().unwrap()
     );
 
     let mut in_frame = Mat::zeros(
@@ -226,11 +228,26 @@ fn main() -> Result<()> {
         width.to_i32().expect("failed to convert width to i32"),
         CV_8UC3,
     )?
-    .to_mat()?;
-    let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)?.to_mat()?;
-    let out_frame_size = out_frame.size()?;
+    .to_mat()
+    .context("failed converting input frame MatExpr to Mat")?;
+    let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)
+        .context("failed to construct MatExpr of zeros")?
+        .to_mat()
+        .context("failed convertin output frame MatExpr to Mat")?;
+    let out_frame_size = out_frame
+        .size()
+        .context("failed getting output frame dimensions")?;
 
-    let mut engine = engine::Engine::new(opt.model, opt.decoder)?;
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })
+    .context("failed setting Ctrl-C handler")?;
+
+    let mut engine = engine::Engine::new(&opt.models, opt.decoder, running.clone())
+        .context("failed constructing engine")?;
 
     let mut nframes = 0;
     let mut frame_duration = Default::default();
@@ -241,19 +258,16 @@ fn main() -> Result<()> {
             .template("{prefix:.bold.dim} {spinner} {wide_msg}"),
     );
 
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    })
-    .expect("Error setting Ctrl-C handler");
-
     while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")?
         && running.load(Ordering::SeqCst)
     {
         let frame_start = Instant::now();
-        capture.read(&mut in_frame)?;
+        if !capture
+            .read(&mut in_frame)
+            .context("failed reading frame")?
+        {
+            return Err(anyhow!("reading frame returned false"));
+        }
         frame_duration += frame_start.elapsed();
         nframes += 1;
 
@@ -264,9 +278,14 @@ fn main() -> Result<()> {
             0.0,
             0.0,
             INTER_LINEAR,
-        )?;
+        )
+        .context("failed to resize frame")?;
 
-        let (poses, timing) = engine.detect_poses(mat_to_ndarray(&out_frame)?)?;
+        let (poses, timing) = engine
+            .detect_poses(
+                mat_to_slice(&out_frame).context("failed converting output frame to slice")?,
+            )
+            .context("failed detecting poses")?;
         draw_poses(
             &poses,
             threshold,
@@ -275,7 +294,8 @@ fn main() -> Result<()> {
             frame_duration,
             nframes,
             &pb_model_cam_fps,
-        )?;
+        )
+        .context("failed drawing poses")?;
     }
     Ok(())
 }

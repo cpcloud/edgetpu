@@ -1,12 +1,13 @@
 use crate::{error::Error, pose, tflite};
 use adjacency_list::{build_adjacency_list, AdjacencyList};
-use bitvec::prelude::*;
+use bitvec::{bitvec, prelude::BitSlice};
 use keypoint_priority_queue::KeypointPriorityQueue;
 use keypoint_with_score::KeypointWithScore;
 use ndarray::{Array, Array1, Array2, Array3};
 use num_traits::{cast::ToPrimitive, Zero};
 use ordered_float::NotNan;
 use point::Point;
+use std::ops::DerefMut;
 
 mod adjacency_list;
 mod keypoint_priority_queue;
@@ -534,23 +535,23 @@ impl crate::decode::Decoder for Decoder {
         3
     }
 
-    fn get_decoded_arrays(
-        &self,
-        interp: &mut tflite::Interpreter,
-    ) -> Result<Box<[pose::Pose]>, Error> {
+    fn decode_output<I>(&self, interp: I) -> Result<Box<[pose::Pose]>, Error>
+    where
+        I: DerefMut<Target = tflite::Interpreter>,
+    {
         use pose::NUM_KEYPOINTS;
 
         let recip_output_stride = f32::from(self.output_stride).recip();
 
-        let mut heatmap_tensor = interp.get_output_tensor(0)?;
+        let mut heatmap_tensor = interp.get_output_tensor_by_name("float_heatmaps")?;
         let frame_height = heatmap_tensor.dim(1)?;
         let frame_width = heatmap_tensor.dim(2)?;
         let heatmaps = heatmap_tensor.dequantized()?;
         let shorts = interp
-            .get_output_tensor(1)?
+            .get_output_tensor_by_name("float_short_offsets")?
             .dequantized_with_scale(recip_output_stride)?;
         let mids = interp
-            .get_output_tensor(2)?
+            .get_output_tensor_by_name("float_mid_offsets")?
             .dequantized_with_scale(recip_output_stride)?;
 
         let (pose_scores, keypoint_scores, keypoints) = self.decode_all_poses::<NUM_KEYPOINTS>(
@@ -603,20 +604,21 @@ mod tests {
 
     mod sigmoid_tests {
         use super::sigmoid;
+        use assert_approx_eq::assert_approx_eq;
 
         #[test]
         fn zero() {
-            assert_eq!(sigmoid(0.0).unwrap(), 0.5);
+            assert_approx_eq!(sigmoid(0.0).unwrap(), 0.5);
         }
 
         #[test]
         fn twenty() {
-            assert_eq!(sigmoid(20.0).unwrap(), 1.0);
+            assert_approx_eq!(sigmoid(20.0).unwrap(), 1.0);
         }
 
         #[test]
         fn negative_five() {
-            assert_eq!(sigmoid(-5.0).unwrap(), 0.006692851);
+            assert_approx_eq!(sigmoid(-5.0).unwrap(), 0.006692851);
         }
     }
 
@@ -631,7 +633,7 @@ mod tests {
 
         #[test]
         fn zero() {
-            assert_eq!(log_odds(0.0), -13.81551);
+            assert_approx_eq!(log_odds(0.0), -13.81551);
         }
 
         #[test]
@@ -737,6 +739,7 @@ mod tests {
 
     mod sample_tensor_at_single_channel_test {
         use super::{sample_tensor_at_single_channel, Point};
+        use assert_approx_eq::assert_approx_eq;
         use num_traits::cast::ToPrimitive;
 
         #[test]
@@ -770,7 +773,7 @@ mod tests {
                 sample_tensor_at_single_channel(&tensor, HEIGHT, WIDTH, NUM_CHANNELS, point, C)
                     .unwrap();
 
-            assert_eq!(result, point.y() + point.x() + C.to_f32().unwrap() + 0.1);
+            assert_approx_eq!(result, point.y() + point.x() + C.to_f32().unwrap() + 0.1);
         }
     }
 
@@ -847,8 +850,8 @@ mod tests {
                 // We move once by the (-1, -1) mid-offsets array to (y1 - 1, x1 - 1), and
                 // then i-times by the (1, 1) short-offsets array, to
                 // (y1 + i - 1, x1 + i - 1).
-                assert_eq!(point_result.y(), source.y() + i.to_f32().unwrap() - 1.0);
-                assert_eq!(point_result.x(), source.x() + i.to_f32().unwrap() - 1.0);
+                assert_approx_eq!(point_result.y(), source.y() + i.to_f32().unwrap() - 1.0);
+                assert_approx_eq!(point_result.x(), source.x() + i.to_f32().unwrap() - 1.0);
             }
         }
 
@@ -895,7 +898,9 @@ mod tests {
             const TARGET_ID: usize = 2;
 
             let expected_points = [
+                #[allow(clippy::excessive_precision)]
                 Point::new(3.819355, 4.161290).unwrap(),
+                #[allow(clippy::excessive_precision)]
                 Point::new(4.439290, 4.639046).unwrap(),
                 Point::new(5.111249, 5.168825).unwrap(),
                 Point::new(5.840163, 5.755558).unwrap(),
@@ -945,9 +950,10 @@ mod tests {
             let mut mid_offsets = [-1.0; HEIGHT * WIDTH * 2 * 2 * NUM_EDGES];
             mid_offsets.fill(-1.0);
 
-            let mut adjacency_list = AdjacencyList::default();
-            adjacency_list.child_ids = vec![vec![1], vec![2, 0], vec![1]];
-            adjacency_list.edge_ids = vec![vec![0], vec![1, 3], vec![2]];
+            let adjacency_list = AdjacencyList {
+                child_ids: vec![vec![1], vec![2, 0], vec![1]],
+                edge_ids: vec![vec![0], vec![1, 3], vec![2]],
+            };
             let mut pose_keypoints = PoseKeypoints::<NUM_KEYPOINTS>::default();
             let mut keypoint_scores = PoseKeypointScores::<NUM_KEYPOINTS>::default();
             const Y1: f32 = 7.1;
@@ -1052,7 +1058,7 @@ mod tests {
     }
 
     mod perform_soft_keypoint_nms_tests {
-        use super::{perform_soft_keypoint_nms, Point, PoseKeypointScores};
+        use super::{perform_soft_keypoint_nms, Point};
         use assert_approx_eq::assert_approx_eq;
 
         fn test_soft_keypoint_nms(squared_nms_radius: f32, topk: usize) -> Vec<f32> {
@@ -1062,10 +1068,7 @@ mod tests {
                 [Point::new(0.0, 0.0).unwrap(), Point::new(1.0, 1.0).unwrap()],
                 [Point::new(1.0, 0.0).unwrap(), Point::new(2.0, 2.0).unwrap()],
             ];
-            let all_keypoint_scores = [
-                PoseKeypointScores::from([0.1, 0.2]),
-                PoseKeypointScores::from([0.3, 0.4]),
-            ];
+            let all_keypoint_scores = [[0.1, 0.2], [0.3, 0.4]];
             let decreasing_indices = [1, 0];
             perform_soft_keypoint_nms::<NUM_KEYPOINTS>(
                 &decreasing_indices,

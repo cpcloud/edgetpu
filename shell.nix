@@ -1,7 +1,7 @@
 let
   pkgs = import ./nix;
   sources = import ./nix/sources.nix;
-  pythonEnv = pkgs.python3.withPackages(p: with p; [
+  pythonEnv = pkgs.python3.withPackages (p: with p; [
     click
     ipdb
     ipython
@@ -22,7 +22,12 @@ pkgs.mkShell {
     clang_10
     flatbuffers
     glog
-    libcoral
+    ((libcoral.override {
+      buildType = "debug";
+      withTests = [ ];
+    }).overrideAttrs (_: {
+      dontStrip = true;
+    }))
     libedgetpu
     libv4l
     meson
@@ -33,8 +38,9 @@ pkgs.mkShell {
     tensorflow-lite
     v4l-utils
     pythonEnv
-  ];
+  ] ++ lib.optionals stdenv.isx86_64 [ pkgs.edgetpu-compiler ];
 
+  NIX_CFLAGS_COMPILE = "-ggdb";
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
   CLANG_PATH = "${pkgs.clang_10}/bin/clang";
 }

@@ -1,14 +1,31 @@
-use std::convert::TryFrom;
+use std::{
+    convert::TryFrom,
+    sync::{
+        atomic::{AtomicPtr, Ordering},
+        Arc,
+    },
+};
 
 use crate::{
     error::{check_null, check_null_mut, Error},
     tflite_sys,
 };
 
+struct RawDelegate {
+    delegate: AtomicPtr<tflite_sys::TfLiteDelegate>,
+    deleter: Box<dyn FnMut(*mut tflite_sys::TfLiteDelegate) + Send + Sync + 'static>,
+}
+
+impl Drop for RawDelegate {
+    fn drop(&mut self) {
+        (&mut self.deleter)(self.delegate.load(Ordering::SeqCst))
+    }
+}
+
 /// A safe wrapper around Tensorflow Lite delegates.
+#[derive(Clone)]
 pub(crate) struct Delegate {
-    delegate: *const tflite_sys::TfLiteDelegate,
-    deleter: Box<dyn FnMut(*mut tflite_sys::TfLiteDelegate)>,
+    delegate: Arc<RawDelegate>,
 }
 
 impl TryFrom<tflite_sys::edgetpu_device_type> for Delegate {
@@ -39,21 +56,17 @@ impl Delegate {
         deleter: D,
     ) -> Result<Self, Error>
     where
-        D: FnMut(*mut tflite_sys::TfLiteDelegate) + 'static,
+        D: FnMut(*mut tflite_sys::TfLiteDelegate) + Send + Sync + 'static,
     {
         Ok(Self {
-            delegate: check_null(delegate).ok_or(Error::ConstructDelegate)?,
-            deleter: Box::new(deleter),
+            delegate: Arc::new(RawDelegate {
+                delegate: AtomicPtr::new(check_null(delegate).ok_or(Error::ConstructDelegate)? as _),
+                deleter: Box::new(deleter),
+            }),
         })
     }
 
     pub(super) fn as_mut_ptr(&self) -> *mut tflite_sys::TfLiteDelegate {
-        self.delegate as _
-    }
-}
-
-impl Drop for Delegate {
-    fn drop(&mut self) {
-        (self.deleter)(self.delegate as _)
+        self.delegate.delegate.load(Ordering::SeqCst)
     }
 }

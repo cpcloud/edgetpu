@@ -1,11 +1,11 @@
 use crate::{
-    error::{check_null, tflite_status_to_result, Error},
+    error::{check_null, Error},
     tflite_sys,
 };
 #[cfg(feature = "posenet_decoder")]
 use ndarray::{ArrayView, IntoDimension};
 use num_traits::ToPrimitive;
-use std::{convert::TryFrom, marker::PhantomData};
+use std::{convert::TryFrom, ffi::CStr, marker::PhantomData};
 
 fn dim(tensor: *const tflite_sys::TfLiteTensor, index: usize) -> Result<usize, Error> {
     assert!(!tensor.is_null());
@@ -42,6 +42,12 @@ impl<'interp> Tensor<'interp> {
             len: (0..num_dims(tensor)?).try_fold(1, |size, d| Ok(size * dim(tensor, d)?))?,
             _p: Default::default(),
         })
+    }
+
+    pub(crate) fn name<'a>(&'a self) -> Result<&'a str, Error> {
+        unsafe { CStr::from_ptr((*self.tensor).name) }
+            .to_str()
+            .map_err(Error::GetTensorName)
     }
 
     pub(crate) fn r#type(&self) -> tflite_sys::TfLiteType {
@@ -111,19 +117,5 @@ impl<'interp> Tensor<'interp> {
 
     pub(crate) fn dim(&self, index: usize) -> Result<usize, Error> {
         dim(self.tensor, index)
-    }
-
-    pub(crate) fn copy_from_buffer(&mut self, buf: &[u8]) -> Result<(), Error> {
-        tflite_status_to_result(
-            // SAFETY: buf is guaranteed to be valid and have length buf.len()
-            unsafe {
-                tflite_sys::TfLiteTensorCopyFromBuffer(
-                    self.tensor as _,
-                    buf.as_ptr().cast(),
-                    buf.len(),
-                )
-            },
-            "failed to copy from input buffer",
-        )
     }
 }

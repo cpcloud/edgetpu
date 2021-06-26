@@ -76,11 +76,12 @@ impl Add for Point {
 #[cfg(test)]
 mod tests {
     use super::Point;
+    use assert_approx_eq::assert_approx_eq;
 
     #[test]
     fn xy_points() {
         let a = Point::new(0.5, 0.5).unwrap();
         let b = Point::new(1.0, 1.0).unwrap();
-        assert_eq!(a.squared_distance(b), 0.5);
+        assert_approx_eq!(a.squared_distance(b), 0.5);
     }
 }

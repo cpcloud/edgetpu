@@ -2,13 +2,33 @@ use crate::{
     error::{check_null_mut, Error},
     tflite_sys,
 };
-use std::{ffi::CString, os::unix::ffi::OsStrExt, path::Path};
+use std::{
+    ffi::CString,
+    os::unix::ffi::OsStrExt,
+    path::Path,
+    sync::{
+        atomic::{AtomicPtr, Ordering},
+        Arc,
+    },
+};
 
-/// A safe TFLiteModel wrapper.
+struct RawModel(AtomicPtr<tflite_sys::TfLiteModel>);
+
+impl Drop for RawModel {
+    fn drop(&mut self) {
+        // SAFETY: self.model is guaranteed to be valid
+        unsafe {
+            tflite_sys::TfLiteModelDelete(self.0.load(Ordering::SeqCst));
+        }
+    }
+}
+
+/// A TFLiteModel wrapper.
+#[derive(Clone)]
 pub(crate) struct Model {
     /// SAFETY: `model` is owned and not mutated by any other APIs here
     /// or in TFLite.
-    model: *const tflite_sys::TfLiteModel,
+    model: Arc<RawModel>,
 }
 
 fn path_to_c_string<P>(path: P) -> Result<CString, Error>
@@ -25,25 +45,19 @@ impl Model {
     {
         let path_ref = path.as_ref();
         let path_bytes = path_to_c_string(path_ref)?;
-        // # SAFETY: path_bytes.as_ptr() is guaranteed to be valid
-        let model =
-            check_null_mut(unsafe { tflite_sys::TfLiteModelCreateFromFile(path_bytes.as_ptr()) })
-                .ok_or(Error::GetModelFromFile)?;
-
-        Ok(Self { model })
+        Ok(Self {
+            model: Arc::new(RawModel(AtomicPtr::new(
+                // # SAFETY: path_bytes.as_ptr() is guaranteed to be valid
+                check_null_mut(unsafe {
+                    tflite_sys::TfLiteModelCreateFromFile(path_bytes.as_ptr())
+                })
+                .ok_or(Error::GetModelFromFile)?,
+            ))),
+        })
     }
 
     // SAFETY: You must _not_ deallocate the returned pointer
     pub(super) fn as_mut_ptr(&mut self) -> *mut tflite_sys::TfLiteModel {
-        self.model as _
-    }
-}
-
-impl Drop for Model {
-    fn drop(&mut self) {
-        // SAFETY: self.model is guaranteed to be valid
-        unsafe {
-            tflite_sys::TfLiteModelDelete(self.model as _);
-        }
+        self.model.0.load(Ordering::SeqCst)
     }
 }

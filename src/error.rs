@@ -14,9 +14,6 @@ pub(crate) enum Error {
     #[error("failed to convert usize to i32")]
     GetFfiIndex(#[source] std::num::TryFromIntError),
 
-    #[error("failed to get input tensor: got null pointer instead")]
-    GetInputTensor,
-
     #[error("failed to get output tensor: got null pointer instead")]
     GetOutputTensor,
 
@@ -70,9 +67,6 @@ pub(crate) enum Error {
     #[error("failed to get edgetpu device: no devices found")]
     GetEdgeTpuDevice,
 
-    #[error("failed to get number of channels in Mat")]
-    GetChannels(#[source] opencv::Error),
-
     #[error("failed to get Mat data")]
     GetMatData(#[source] opencv::Error),
 
@@ -103,12 +97,6 @@ pub(crate) enum Error {
     #[error("failed to convert value to usize")]
     ConvertToUSize,
 
-    #[error("failed to construct ArrayView3 from Mat")]
-    ConstructNDArrayFromMat(#[source] ndarray::ShapeError),
-
-    #[error("failed to get ndarray as contiguous slice")]
-    GetNDArrayAsSlice,
-
     #[error("failed to construct NotNan from f32: {1}")]
     ConstructNotNan(#[source] ordered_float::FloatIsNan, f32),
 
@@ -135,12 +123,41 @@ pub(crate) enum Error {
     #[error("failed to convert Point2f {0:?} to Point2i")]
     ConvertPoint2fToPoint2i(opencv::core::Point2f),
 
-    #[error("failed to send pipelined output tensors to channel")]
-    SendPipelinedOutputTensors(
-        #[error] std::sync::mpsc::SendError<Vec<crate::coral::PipelineTensor>>,
-    ),
+    #[error("edgetpu device at index {0} already allocated")]
+    AllocateEdgeTpu(usize),
+
+    #[error("failed to get pointer to interpreter for pipelined model runner")]
+    GetInterpreter,
+
+    #[error("failed to create PipelinedModelRunner")]
+    CreatePipelinedModelRunner,
+
+    #[error("failed to convert number of input tensors from i32 to usize")]
+    GetNumOutputTensors(#[source] std::num::TryFromIntError),
+
+    #[error("failed to pop pipelined model output tensors")]
+    PopPipelinedModelOutputTensors,
+
+    #[error("got null pointer when initializing input tensor")]
+    AllocInputTensor,
+
+    #[error("failed to get output interpreter")]
+    GetOutputInterpreter,
+
+    #[error("cannot construct pose engine from empty model paths")]
+    ConstructPoseEngine,
+
+    #[error("failed to canonicalize path: {1:?}")]
+    CanonicalizePath(#[source] std::io::Error, std::path::PathBuf),
+
+    #[error("failed to get tensor name")]
+    GetTensorName(#[source] std::str::Utf8Error),
+
+    #[error("failed to get tensor with name: {0}")]
+    GetOutputTensorByName(String),
 }
 
+/// Check whether a pointer to mut T data is null.
 pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {
     if ptr.is_null() {
         None
@@ -149,7 +166,7 @@ pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {
     }
 }
 
-///
+/// Check whether a pointer to const T is null.
 pub(crate) fn check_null<T>(ptr: *const T) -> Option<*const T> {
     if ptr.is_null() {
         None

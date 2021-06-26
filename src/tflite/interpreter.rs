@@ -4,7 +4,14 @@ use crate::{
     tflite::{Delegate, Model, Options, Tensor},
     tflite_sys,
 };
-use std::{convert::TryFrom, path::Path};
+use std::{
+    convert::TryFrom,
+    path::Path,
+    sync::{
+        atomic::{AtomicPtr, Ordering},
+        Arc,
+    },
+};
 
 #[cfg(feature = "posenet_decoder")]
 extern "C" {
@@ -20,15 +27,29 @@ extern "C" {
     fn tflite_plugin_destroy_delegate(delegate: *mut tflite_sys::TfLiteDelegate);
 }
 
+struct RawInterpreter(AtomicPtr<tflite_sys::TfLiteInterpreter>);
+
+impl Drop for RawInterpreter {
+    fn drop(&mut self) {
+        // # SAFETY: self.interpreter is guaranteed to be valid.
+        unsafe {
+            tflite_sys::TfLiteInterpreterDelete(self.0.load(Ordering::SeqCst));
+        };
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct Interpreter {
-    interpreter: *mut tflite_sys::TfLiteInterpreter,
+    interpreter: Arc<RawInterpreter>,
     // These fields are never accessed.
     // They are here to ensure that resources created during interpreter construction
     // live as long as the interpreter.
     _options: Options,
     _devices: Devices,
     _model: Model,
-    _delegates: Box<[Delegate]>,
+    #[cfg(feature = "posenet_decoder")]
+    _posenet_decoder_delegate: Delegate,
+    _edgetpu_delegate: Delegate,
 }
 
 /// Logging callback for the posenet decoder delegate.
@@ -46,16 +67,14 @@ impl Interpreter {
     {
         let mut options = Options::new()?;
 
-        let devices = Devices::new()?;
+        let mut devices = Devices::new()?;
         if devices.is_empty() {
             return Err(Error::GetEdgeTpuDevice);
         }
 
-        let mut delegates = Vec::with_capacity(1 + devices.len());
-
         // add posenet decoder
         #[cfg(feature = "posenet_decoder")]
-        {
+        let posenet_decoder_delegate = {
             let mut posenet_decoder_delegate = Delegate::new(
                 check_null_mut(
                     // SAFETY: inputs are valid
@@ -73,16 +92,12 @@ impl Interpreter {
             )?;
 
             options.add_delegate(&mut posenet_decoder_delegate);
+            posenet_decoder_delegate
+        };
 
-            delegates.push(posenet_decoder_delegate);
-        }
+        let mut edgetpu_delegate = Delegate::try_from(devices.allocate_one()?)?;
 
-        for r#type in devices.types() {
-            let mut edgetpu_delegate = Delegate::try_from(r#type?)?;
-
-            options.add_delegate(&mut edgetpu_delegate);
-            delegates.push(edgetpu_delegate);
-        }
+        options.add_delegate(&mut edgetpu_delegate);
 
         options.set_enable_delegate_fallback(false);
 
@@ -93,62 +108,52 @@ impl Interpreter {
         )
         .ok_or(Error::CreateInterpreter)?;
 
+        tflite_status_to_result(
+            unsafe { tflite_sys::TfLiteInterpreterAllocateTensors(interpreter) },
+            "failed to allocate tensors",
+        )?;
+
         Ok(Self {
-            interpreter,
+            interpreter: Arc::new(RawInterpreter(AtomicPtr::new(interpreter))),
             _options: options,
             _devices: devices,
             _model: model,
-            _delegates: delegates.into_boxed_slice(),
+            #[cfg(feature = "posenet_decoder")]
+            _posenet_decoder_delegate: posenet_decoder_delegate,
+            _edgetpu_delegate: edgetpu_delegate,
         })
     }
 
-    pub(crate) fn allocate_tensors(&mut self) -> Result<(), Error> {
-        tflite_status_to_result(
-            unsafe { tflite_sys::TfLiteInterpreterAllocateTensors(self.interpreter) },
-            "failed to allocate tensors",
-        )
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut tflite_sys::TfLiteInterpreter {
+        self.interpreter.0.load(Ordering::SeqCst)
     }
 
-    pub(crate) fn invoke(&mut self) -> Result<(), Error> {
-        tflite_status_to_result(
-            unsafe { tflite_sys::TfLiteInterpreterInvoke(self.interpreter) },
-            "model invocation failed",
-        )
+    pub(crate) fn as_ptr(&self) -> *mut tflite_sys::TfLiteInterpreter {
+        self.interpreter.0.load(Ordering::SeqCst) as _
     }
 
-    pub(crate) fn get_input_tensor(&mut self, index: usize) -> Result<Tensor<'_>, Error> {
-        let index = i32::try_from(index).map_err(Error::GetFfiIndex)?;
-        Tensor::new(
-            check_null_mut(unsafe {
-                tflite_sys::TfLiteInterpreterGetInputTensor(self.interpreter, index)
-            })
-            .ok_or(Error::GetInputTensor)?,
-        )
-    }
-
-    pub(crate) fn get_output_tensor_count(&self) -> usize {
-        usize::try_from(unsafe {
-            tflite_sys::TfLiteInterpreterGetOutputTensorCount(self.interpreter)
-        })
-        .expect("failed to convert output tensor count i32 to usize")
+    pub(crate) fn get_output_tensor_count(&self) -> Result<usize, Error> {
+        usize::try_from(unsafe { tflite_sys::TfLiteInterpreterGetOutputTensorCount(self.as_ptr()) })
+            .map_err(Error::GetNumOutputTensors)
     }
 
     pub(crate) fn get_output_tensor(&self, index: usize) -> Result<Tensor<'_>, Error> {
         let index = i32::try_from(index).map_err(Error::GetFfiIndex)?;
         Tensor::new(
             check_null(unsafe {
-                tflite_sys::TfLiteInterpreterGetOutputTensor(self.interpreter, index)
+                tflite_sys::TfLiteInterpreterGetOutputTensor(self.as_ptr(), index)
             })
             .ok_or(Error::GetOutputTensor)? as _,
         )
     }
-}
 
-impl Drop for Interpreter {
-    fn drop(&mut self) {
-        // # SAFETY: self.interpreter is guaranteed to be valid.
-        unsafe {
-            tflite_sys::TfLiteInterpreterDelete(self.interpreter);
-        };
+    pub(crate) fn get_output_tensor_by_name(&self, name: &str) -> Result<Tensor<'_>, Error> {
+        for index in 0..self.get_output_tensor_count()? {
+            let tensor = self.get_output_tensor(index)?;
+            if tensor.name()? == name {
+                return Ok(tensor);
+            }
+        }
+        Err(Error::GetOutputTensorByName(name.to_owned()))
     }
 }

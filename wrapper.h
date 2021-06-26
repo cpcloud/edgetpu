@@ -5,3 +5,6 @@
 #include "tensorflow/lite/c/common.h"
 
 #include "tflite/public/edgetpu_c.h"
+
+#include "coral/pipeline/common_c.h"
+#include "coral/pipeline/pipelined_model_runner_c.h"
