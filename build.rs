@@ -32,11 +32,15 @@ fn main() -> Result<()> {
         .impl_debug(true)
         .size_t_is_usize(true)
         .opaque_type("max_align_t");
+
+    let mut include_paths = vec![];
+
     for include_path in LIBS
         .iter()
         .flat_map(|lib| pkg_config::Config::new().probe(lib).unwrap().include_paths)
     {
         bindings = bindings.clang_arg(format!("-I{}", include_path.display()));
+        include_paths.push(include_path);
     }
 
     bindings
@@ -50,6 +54,15 @@ fn main() -> Result<()> {
         )
         .context("failed to write bindings to file")?;
 
+    println!("cargo:rerun-if-changed=src/coral_ffi.rs");
+    println!("cargo:rerun-if-changed=src/coral_ffi.h");
+    println!("cargo:rerun-if-changed=src/coral_ffi.cc");
+    cxx_build::bridge("src/coral_ffi.rs")
+        .includes(include_paths)
+        .file("src/coral_ffi.cc")
+        .flag_if_supported("-std=c++17")
+        .flag_if_supported("-O3")
+        .compile("tflite_thing");
 
     Ok(())
 }

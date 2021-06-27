@@ -25,11 +25,13 @@ use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 
 mod coral;
+mod coral_ffi;
 mod decode;
 mod edgetpu;
 mod engine;
 mod error;
 mod pose;
+mod tf;
 mod tflite;
 mod tflite_sys;
 
