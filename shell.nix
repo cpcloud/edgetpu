@@ -31,7 +31,6 @@ pkgs.mkShell {
     libedgetpu
     libv4l
     meson
-    openblas
     opencv4
     pkg-config
     rustToolchain
