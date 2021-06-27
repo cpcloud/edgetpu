@@ -6,12 +6,13 @@ use crate::{
 };
 use std::{
     convert::TryFrom,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicPtr, Ordering},
         Arc,
     },
 };
+use tracing::{info, instrument};
 
 #[cfg(feature = "posenet_decoder")]
 extern "C" {
@@ -41,15 +42,16 @@ impl Drop for RawInterpreter {
 #[derive(Clone)]
 pub(crate) struct Interpreter {
     interpreter: Arc<RawInterpreter>,
+    model_path: PathBuf,
     // These fields are never accessed.
     // They are here to ensure that resources created during interpreter construction
     // live as long as the interpreter.
     _options: Options,
-    _devices: Devices,
     _model: Model,
     #[cfg(feature = "posenet_decoder")]
     _posenet_decoder_delegate: Delegate,
     _edgetpu_delegate: Delegate,
+    _devices: Devices,
 }
 
 /// Logging callback for the posenet decoder delegate.
@@ -57,20 +59,16 @@ pub(crate) struct Interpreter {
 unsafe extern "C" fn posenet_decoder_delegate_error_handler(msg: *const std::os::raw::c_char) {
     // SAFETY: `msg` is valid for the lifetime of the call, and doesn't
     // change during that lifetime
-    eprintln!("{:?}", std::ffi::CStr::from_ptr(msg));
+    tracing::error!(error = ?std::ffi::CStr::from_ptr(msg));
 }
 
 impl Interpreter {
-    pub(crate) fn new<P>(path: P) -> Result<Self, Error>
+    #[instrument(name = "Interpreter::new", skip(path, devices))]
+    pub(crate) fn new<P>(path: P, devices: Devices) -> Result<Self, Error>
     where
         P: AsRef<Path>,
     {
         let mut options = Options::new()?;
-
-        let mut devices = Devices::new()?;
-        if devices.is_empty() {
-            return Err(Error::GetEdgeTpuDevice);
-        }
 
         // add posenet decoder
         #[cfg(feature = "posenet_decoder")]
@@ -95,13 +93,15 @@ impl Interpreter {
             posenet_decoder_delegate
         };
 
+        info!(message = "constructing interpreter", path = %path.as_ref().display());
         let mut edgetpu_delegate = Delegate::try_from(devices.allocate_one()?)?;
 
         options.add_delegate(&mut edgetpu_delegate);
 
         options.set_enable_delegate_fallback(false);
 
-        let mut model = Model::new(path)?;
+        let model_path = path.as_ref().to_path_buf();
+        let mut model = Model::new(model_path.clone())?;
         let interpreter = check_null_mut(
             // SAFETY: model and options are both valid pointers
             unsafe { tflite_sys::TfLiteInterpreterCreate(model.as_mut_ptr(), options.as_ptr()) },
@@ -115,13 +115,18 @@ impl Interpreter {
 
         Ok(Self {
             interpreter: Arc::new(RawInterpreter(AtomicPtr::new(interpreter))),
+            model_path,
             _options: options,
-            _devices: devices,
             _model: model,
             #[cfg(feature = "posenet_decoder")]
             _posenet_decoder_delegate: posenet_decoder_delegate,
             _edgetpu_delegate: edgetpu_delegate,
+            _devices: devices,
         })
+    }
+
+    pub(crate) fn model_path(&self) -> &Path {
+        &self.model_path
     }
 
     pub(crate) fn as_mut_ptr(&mut self) -> *mut tflite_sys::TfLiteInterpreter {

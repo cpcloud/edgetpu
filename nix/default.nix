@@ -1,3 +1,4 @@
+{ buildType ? "release" }:
 let
   sources = import ./sources.nix;
 in
@@ -29,6 +30,22 @@ import /home/cloud/src/nixpkgs {
     })
     (self: super: {
       inherit (import sources.niv { }) niv;
+    })
+    (self: super: {
+      libcoral = (super.libcoral.override {
+        inherit buildType;
+        withTests = [ ];
+        lto = buildType == "release";
+      }).overrideAttrs (_: {
+        dontStrip = buildType == "debug";
+      });
+
+      libedgetpu = (super.libedgetpu.override {
+        inherit buildType;
+        lto = buildType == "release";
+      }).overrideAttrs (_: {
+        dontStrip = buildType == "debug";
+      });
     })
   ];
 }

@@ -14,8 +14,9 @@ use std::{
     convert::TryFrom,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc::channel,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
@@ -32,6 +33,7 @@ mod pose;
 mod tflite;
 mod tflite_sys;
 
+#[allow(clippy::too_many_arguments)]
 fn draw_poses(
     #[cfg(feature = "gui")] poses: &[pose::Pose],
     #[cfg(not(feature = "gui"))] _poses: &[pose::Pose],
@@ -43,12 +45,13 @@ fn draw_poses(
     frame_duration: Duration,
     nframes: usize,
     pb_model_cam_fps: &indicatif::ProgressBar,
+    pbs_segment_stats: &[indicatif::ProgressBar],
 ) -> Result<(), Error> {
     let nframes = nframes.to_f64().ok_or(Error::ConvertToF64)?;
     let fps_text = format!(
         "FPS => model: {:.1}, cam: {:.1}",
         nframes / timing.inference.as_secs_f64(),
-        nframes / frame_duration.as_secs_f64()
+        nframes / frame_duration.as_secs_f64(),
     );
 
     #[cfg(feature = "gui")]
@@ -127,6 +130,9 @@ fn draw_poses(
 
     pb_model_cam_fps.set_message(fps_text);
     pb_model_cam_fps.inc(1);
+    for pb in pbs_segment_stats.iter() {
+        pb.inc(1);
+    }
     Ok(())
 }
 
@@ -190,6 +196,12 @@ struct Opt {
     #[structopt(short, long, default_value = "info", env = "RUST_LOG")]
     log_level: tracing_subscriber::filter::EnvFilter,
 
+    #[structopt(short, long, default_value = "1000")]
+    input_queue_size: usize,
+
+    #[structopt(short, long, default_value = "1000")]
+    output_queue_size: usize,
+
     #[structopt(subcommand)]
     decoder: decode::Decode,
 }
@@ -230,27 +242,48 @@ fn main() -> Result<()> {
     )?
     .to_mat()
     .context("failed converting input frame MatExpr to Mat")?;
-    let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)
-        .context("failed to construct MatExpr of zeros")?
-        .to_mat()
-        .context("failed convertin output frame MatExpr to Mat")?;
+    let out_frame = Arc::new(Mutex::new(
+        Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)
+            .context("failed to construct MatExpr of zeros")?
+            .to_mat()
+            .context("failed convertin output frame MatExpr to Mat")?,
+    ));
     let out_frame_size = out_frame
+        .lock()
+        .unwrap()
         .size()
         .context("failed getting output frame dimensions")?;
 
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
+    let running_ctrl_c = running.clone();
 
     ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
+        running_ctrl_c.store(false, Ordering::SeqCst);
     })
     .context("failed setting Ctrl-C handler")?;
 
-    let mut engine = engine::Engine::new(&opt.models, opt.decoder, running.clone())
-        .context("failed constructing engine")?;
+    let engine = Arc::new(
+        engine::Engine::new(
+            &opt.models,
+            opt.decoder,
+            opt.input_queue_size,
+            opt.output_queue_size,
+        )
+        .context("failed constructing engine")?,
+    );
 
-    let mut nframes = 0;
-    let mut frame_duration = Default::default();
+    let frame_duration = Arc::new(AtomicU64::new(0));
+    let frame_duration_push = frame_duration.clone();
+
+    let pbs_segment_stats = std::iter::repeat_with(|| {
+        ProgressBar::new_spinner().with_style(
+            ProgressStyle::default_spinner()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .template("{prefix:.bold.dim} {spinner} {wide_msg}"),
+        )
+    })
+    .take(engine.num_interpreters())
+    .collect::<Vec<_>>();
 
     let pb_model_cam_fps = ProgressBar::new_spinner().with_style(
         ProgressStyle::default_spinner()
@@ -258,44 +291,95 @@ fn main() -> Result<()> {
             .template("{prefix:.bold.dim} {spinner} {wide_msg}"),
     );
 
-    while wait_q(opt.wait_key_ms).context("failed waiting for 'q' key")?
-        && running.load(Ordering::SeqCst)
-    {
-        let frame_start = Instant::now();
-        if !capture
-            .read(&mut in_frame)
-            .context("failed reading frame")?
-        {
-            return Err(anyhow!("reading frame returned false"));
-        }
-        frame_duration += frame_start.elapsed();
-        nframes += 1;
+    let (poses_tx, poses_rx) = channel();
+    let (input_frames_tx, input_frames_rx) = channel();
 
-        resize(
-            &in_frame,
-            &mut out_frame,
-            out_frame_size,
-            0.0,
-            0.0,
-            INTER_LINEAR,
-        )
-        .context("failed to resize frame")?;
+    let wait_key_ms = opt.wait_key_ms;
+    let running_push = running.clone();
+    let engine_push = engine.clone();
+    let out_frame_push = out_frame.clone();
+    let push_frames = std::thread::spawn(move || {
+        while running_push.load(Ordering::SeqCst) {
+            let frame_start = Instant::now();
+            if !capture
+                .read(&mut in_frame)
+                .context("failed reading frame")?
+            {
+                return Err(anyhow!("reading frame returned false"));
+            }
+            frame_duration_push.fetch_add(frame_start.elapsed().as_secs(), Ordering::SeqCst);
 
-        let (poses, timing) = engine
-            .detect_poses(
-                mat_to_slice(&out_frame).context("failed converting output frame to slice")?,
+            let mut frame = out_frame_push.lock().unwrap();
+            resize(
+                &in_frame,
+                &mut *frame,
+                out_frame_size,
+                0.0,
+                0.0,
+                INTER_LINEAR,
             )
-            .context("failed detecting poses")?;
-        draw_poses(
-            &poses,
-            threshold,
-            timing,
-            &mut out_frame,
-            frame_duration,
-            nframes,
-            &pb_model_cam_fps,
-        )
-        .context("failed drawing poses")?;
-    }
-    Ok(())
+            .context("failed to resize frame")?;
+
+            let inputs = Arc::new(vec![engine_push.alloc_input_tensor(mat_to_slice(&*frame)?)?]);
+
+            engine_push.push(Some(inputs.clone()))?;
+            input_frames_tx.send(inputs).unwrap();
+        }
+
+        engine_push.push(None)?;
+        Ok::<_, anyhow::Error>(())
+    });
+
+    let running_pop = running.clone();
+    let pop_frames = std::thread::spawn(move || {
+        while running_pop.load(Ordering::SeqCst) {
+            let _input_tensors = input_frames_rx.recv().unwrap();
+            let _output_tensors = engine.pop().context("failed to pop")?;
+            let (poses, timing) = engine.decode_poses().context("failed detecting poses")?;
+            poses_tx
+                .send((poses, timing, engine.frame_num(), engine.segment_stats()?))
+                .unwrap();
+        }
+        Ok::<_, anyhow::Error>(())
+    });
+
+    let app = std::thread::spawn(move || {
+        while let Ok((poses, timing, frame_num, segment_stats)) = poses_rx.recv() {
+            if !wait_q(wait_key_ms).context("failed waiting for 'q' key")? {
+                running.store(false, Ordering::SeqCst);
+            }
+
+            if !running.load(Ordering::SeqCst) {
+                break;
+            }
+
+            for (i, (pb_stat, stat)) in pbs_segment_stats.iter().zip(segment_stats).enumerate() {
+                pb_stat.set_message(format!(
+                    "interp: {}, duration: {}, inferences: {}",
+                    i,
+                    humantime::format_duration(Duration::from_nanos(
+                        u64::try_from(stat.total_time_ns).map_err(Error::ConvertI64ToU64)?
+                    )),
+                    stat.num_inferences,
+                ));
+            }
+
+            draw_poses(
+                &poses,
+                threshold,
+                timing,
+                &mut *out_frame.lock().unwrap(),
+                Duration::from_secs(frame_duration.load(Ordering::SeqCst)),
+                frame_num,
+                &pb_model_cam_fps,
+                &[],
+            )
+            .context("failed drawing poses")?;
+        }
+        Ok::<_, anyhow::Error>(())
+    });
+
+    push_frames.join().expect("push_frames thread panicked")?;
+    pop_frames.join().expect("pop_frames thread panicked")?;
+    app.join().expect("app thread panicked")
 }

@@ -1,5 +1,6 @@
 use std::{
     convert::TryFrom,
+    ffi::CStr,
     sync::{
         atomic::{AtomicPtr, Ordering},
         Arc,
@@ -28,20 +29,17 @@ pub(crate) struct Delegate {
     delegate: Arc<RawDelegate>,
 }
 
-impl TryFrom<tflite_sys::edgetpu_device_type> for Delegate {
+impl TryFrom<(tflite_sys::edgetpu_device_type, &CStr)> for Delegate {
     type Error = Error;
 
-    fn try_from(r#type: tflite_sys::edgetpu_device_type) -> Result<Self, Self::Error> {
+    fn try_from(
+        (r#type, path): (tflite_sys::edgetpu_device_type, &CStr),
+    ) -> Result<Self, Self::Error> {
         Self::new(
             check_null_mut(
                 // SAFETY: inputs are all valid, and the return value is checked for null
                 unsafe {
-                    tflite_sys::edgetpu_create_delegate(
-                        r#type,
-                        std::ptr::null(),
-                        std::ptr::null(),
-                        0,
-                    )
+                    tflite_sys::edgetpu_create_delegate(r#type, path.as_ptr(), std::ptr::null(), 0)
                 },
             )
             .ok_or(Error::CreateEdgeTpuDelegate)?,

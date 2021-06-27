@@ -7,7 +7,7 @@ use ndarray::{Array, Array1, Array2, Array3};
 use num_traits::{cast::ToPrimitive, Zero};
 use ordered_float::NotNan;
 use point::Point;
-use std::ops::DerefMut;
+use std::ops::Deref;
 
 mod adjacency_list;
 mod keypoint_priority_queue;
@@ -537,7 +537,7 @@ impl crate::decode::Decoder for Decoder {
 
     fn decode_output<I>(&self, interp: I) -> Result<Box<[pose::Pose]>, Error>
     where
-        I: DerefMut<Target = tflite::Interpreter>,
+        I: Deref<Target = tflite::Interpreter>,
     {
         use pose::NUM_KEYPOINTS;
 

@@ -1,5 +1,7 @@
 let
-  pkgs = import ./nix;
+  buildType = "release";
+  pkgs = import ./nix { inherit buildType; };
+  inherit (pkgs) lib;
   sources = import ./nix/sources.nix;
   pythonEnv = pkgs.python3.withPackages (p: with p; [
     click
@@ -13,7 +15,7 @@ let
 in
 pkgs.mkShell {
   name = "edgetpu";
-  buildInputs = with pkgs; [
+  buildInputs = (with pkgs; [
     niv
     abseil-cpp
     cargo-edit
@@ -22,19 +24,8 @@ pkgs.mkShell {
     clang_10
     flatbuffers
     glog
-    ((pkgs.libcoral.override {
-      inherit buildType;
-      withTests = [ ];
-      lto = buildType == "release";
-    }).overrideAttrs (_: {
-      dontStrip = buildType == "debug";
-    }))
-    ((libedgetpu.override {
-      inherit buildType;
-      lto = buildType == "release";
-    }).overrideAttrs (_: {
-      dontStrip = buildType == "debug";
-    }))
+    libcoral
+    libedgetpu
     libv4l
     meson
     opencv4
@@ -43,9 +34,9 @@ pkgs.mkShell {
     tensorflow-lite
     v4l-utils
     pythonEnv
-  ] ++ lib.optionals stdenv.isx86_64 [ pkgs.edgetpu-compiler ];
+  ]) ++ lib.optionals pkgs.stdenv.isx86_64 [ pkgs.edgetpu-compiler ];
 
-  NIX_CFLAGS_COMPILE = "-ggdb";
+  NIX_CFLAGS_COMPILE = lib.optionalString (buildType == "debug") "-ggdb";
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
   CLANG_PATH = "${pkgs.clang_10}/bin/clang";
 }

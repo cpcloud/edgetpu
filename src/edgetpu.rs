@@ -1,13 +1,16 @@
-use std::sync::{
-    atomic::{AtomicPtr, Ordering},
-    Arc, RwLock,
-};
-
 use crate::{
     error::{check_null, check_null_mut, Error},
     tflite_sys,
 };
 use bitvec::{bitbox, prelude::BitBox};
+use std::{
+    ffi::CStr,
+    sync::{
+        atomic::{AtomicPtr, Ordering},
+        Arc, Mutex,
+    },
+};
+use tracing::{info, instrument};
 
 struct RawDevices(AtomicPtr<tflite_sys::edgetpu_device>);
 
@@ -27,7 +30,7 @@ pub(crate) struct Devices {
     /// and is never mutated externally.
     devices: Arc<RawDevices>,
     len: usize,
-    allocd: Arc<RwLock<BitBox>>,
+    allocated: Arc<Mutex<BitBox>>,
 }
 
 impl Devices {
@@ -39,10 +42,13 @@ impl Devices {
             unsafe { tflite_sys::edgetpu_list_devices(&mut len) },
         )
         .ok_or(Error::ListDevices)?;
+        if len == 0 {
+            return Err(Error::GetEdgeTpuDevice);
+        }
         Ok(Self {
             devices: Arc::new(RawDevices(AtomicPtr::new(devices))),
             len,
-            allocd: Arc::new(RwLock::new(bitbox![0; len])),
+            allocated: Arc::new(Mutex::new(bitbox![0; len])),
         })
     }
 
@@ -51,47 +57,37 @@ impl Devices {
         self.len
     }
 
-    /// Return whether there are no devices.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
     /// Construct an iterator over device types.
-    pub(crate) fn types(
+    fn devices(
         &self,
-    ) -> impl Iterator<Item = Result<tflite_sys::edgetpu_device_type, Error>> {
-        let devices = self.devices.clone();
+    ) -> impl Iterator<Item = Result<(tflite_sys::edgetpu_device_type, &CStr), Error>> {
         (0..self.len()).map(move |offset| {
             // SAFETY: devices is guaranteed to be valid, and pointing to data with offset < len
-            Ok(unsafe {
-                *check_null(devices.0.load(Ordering::SeqCst).add(offset))
+            let device = unsafe {
+                *check_null(self.devices.0.load(Ordering::SeqCst).add(offset))
                     .ok_or(Error::GetDevicePtr)?
-            }
-            .type_)
-        })
-    }
-
-    /// Return an iterator over all devices not currently allocated to an interpreter.
-    fn unallocated(
-        &self,
-    ) -> impl Iterator<Item = Result<(usize, tflite_sys::edgetpu_device_type), Error>> + '_ {
-        let allocd = self.allocd.clone();
-        self.types().enumerate().filter_map(move |(index, r#type)| {
-            if !allocd.read().unwrap()[index] {
-                Some(r#type.map(|t| (index, t)))
-            } else {
-                None
-            }
+            };
+            Ok((device.type_, unsafe { CStr::from_ptr(device.path) }))
         })
     }
 
     /// Allocate a single TPU device from the pool of devices.
-    pub(crate) fn allocate_one(&mut self) -> Result<tflite_sys::edgetpu_device_type, Error> {
-        let (index, r#type) = self.unallocated().next().ok_or(Error::GetEdgeTpuDevice)??;
-        if self.allocd.read().unwrap()[index] {
-            return Err(Error::AllocateEdgeTpu(index));
-        }
-        self.allocd.write().unwrap().set(index, true);
-        Ok(r#type)
+    #[instrument(name = "Devices::allocate_one", skip(self))]
+    pub(crate) fn allocate_one(&self) -> Result<(tflite_sys::edgetpu_device_type, &CStr), Error> {
+        let (r#type, path) = self
+            .devices()
+            .enumerate()
+            .find_map(|(index, device_info)| {
+                let mut allocated = self.allocated.lock().unwrap();
+                if !allocated[index] {
+                    allocated.set(index, true);
+                    Some(device_info)
+                } else {
+                    None
+                }
+            })
+            .ok_or(Error::FindEdgeTpuDevice)??;
+        info!(message = "allocated device", path = ?path.to_str().map_err(Error::GetEdgeTpuDevicePath)?);
+        Ok((r#type, path))
     }
 }

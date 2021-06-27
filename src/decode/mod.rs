@@ -1,7 +1,7 @@
 use crate::{error::Error, pose, tflite};
 use ndarray::{Axis, CowArray, Ix1, Ix2, Ix3};
 use num_traits::cast::FromPrimitive;
-use std::ops::DerefMut;
+use std::ops::Deref;
 
 /// Decode poses into a Vec of Pose.
 pub(self) fn reconstruct_from_arrays(
@@ -37,7 +37,7 @@ pub(crate) trait Decoder {
 
     fn decode_output<I>(&self, interp: I) -> Result<Box<[pose::Pose]>, Error>
     where
-        I: DerefMut<Target = tflite::Interpreter>;
+        I: Deref<Target = tflite::Interpreter>;
 
     /// Validate that the model has the expected number of output tensors.
     fn validate_output_tensor_count(&self, output_tensor_count: usize) -> Result<(), Error> {
@@ -90,7 +90,7 @@ impl Decoder for Decode {
 
     fn decode_output<I>(&self, interp: I) -> Result<Box<[pose::Pose]>, Error>
     where
-        I: DerefMut<Target = tflite::Interpreter>,
+        I: Deref<Target = tflite::Interpreter>,
     {
         match self {
             #[cfg(feature = "posenet_decoder")]

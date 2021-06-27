@@ -67,6 +67,9 @@ pub(crate) enum Error {
     #[error("failed to get edgetpu device: no devices found")]
     GetEdgeTpuDevice,
 
+    #[error("failed to find unallocated edgetpu device")]
+    FindEdgeTpuDevice,
+
     #[error("failed to get Mat data")]
     GetMatData(#[source] opencv::Error),
 
@@ -123,9 +126,6 @@ pub(crate) enum Error {
     #[error("failed to convert Point2f {0:?} to Point2i")]
     ConvertPoint2fToPoint2i(opencv::core::Point2f),
 
-    #[error("edgetpu device at index {0} already allocated")]
-    AllocateEdgeTpu(usize),
-
     #[error("failed to get pointer to interpreter for pipelined model runner")]
     GetInterpreter,
 
@@ -155,6 +155,39 @@ pub(crate) enum Error {
 
     #[error("failed to get tensor with name: {0}")]
     GetOutputTensorByName(String),
+
+    #[error("failed to get segment stats")]
+    GetSegmentStats,
+
+    #[error("got zero segment stats")]
+    EmptySegmentStats,
+
+    #[error("cannot construct PipelinedModelRunner from empty interpreters list")]
+    ConstructPipelineModelRunnerFromInterpreters,
+
+    #[error("failed to get edgetpu device path")]
+    GetEdgeTpuDevicePath(#[source] std::str::Utf8Error),
+
+    #[error("failed to push tensors")]
+    PushTensors,
+
+    #[error("got empty interpreter pointers vec")]
+    GetInterpreterPointers,
+
+    #[error("got null interpreter vec pointer")]
+    GetInterpreterVecPointer,
+
+    #[error("got null pointer when constructing PipelineInputTensor")]
+    GetPipelineInputTensor,
+
+    #[error("got null pointer when constructing PipelineOutputTensor")]
+    GetPipelineOutputTensor,
+
+    #[error("failed to convert i64 to u64")]
+    ConvertI64ToU64(#[source] std::num::TryFromIntError),
+
+    #[error("queue sizes pointer was null")]
+    GetQueueSizesPointer,
 }
 
 /// Check whether a pointer to mut T data is null.

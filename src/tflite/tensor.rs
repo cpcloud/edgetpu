@@ -44,7 +44,7 @@ impl<'interp> Tensor<'interp> {
         })
     }
 
-    pub(crate) fn name<'a>(&'a self) -> Result<&'a str, Error> {
+    pub(crate) fn name(&self) -> Result<&str, Error> {
         unsafe { CStr::from_ptr((*self.tensor).name) }
             .to_str()
             .map_err(Error::GetTensorName)
