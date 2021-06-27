@@ -22,13 +22,19 @@ pkgs.mkShell {
     clang_10
     flatbuffers
     glog
-    ((libcoral.override {
-      buildType = "debug";
+    ((pkgs.libcoral.override {
+      inherit buildType;
       withTests = [ ];
+      lto = buildType == "release";
     }).overrideAttrs (_: {
-      dontStrip = true;
+      dontStrip = buildType == "debug";
     }))
-    libedgetpu
+    ((libedgetpu.override {
+      inherit buildType;
+      lto = buildType == "release";
+    }).overrideAttrs (_: {
+      dontStrip = buildType == "debug";
+    }))
     libv4l
     meson
     opencv4
