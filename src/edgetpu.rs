@@ -1,4 +1,4 @@
-use crate::{coral_ffi::ffi, error::Error};
+use crate::{ffi::ffi, error::Error};
 use bitvec::{bitbox, prelude::BitBox};
 use cxx::SharedPtr;
 use std::sync::{Arc, Mutex};
@@ -17,9 +17,7 @@ impl Devices {
         let contexts = Arc::new(
             ffi::get_all_device_infos()
                 .into_iter()
-                .map(|ffi::DeviceInfo { typ, path }| unsafe {
-                    ffi::make_edge_tpu_context(typ, &path)
-                })
+                .map(|ffi::DeviceInfo { typ, path }| ffi::make_edge_tpu_context(typ, &path))
                 .collect::<Vec<_>>(),
         );
         let len = contexts.len();
@@ -27,11 +25,6 @@ impl Devices {
             contexts,
             allocated: Arc::new(Mutex::new(bitbox![0; len])),
         })
-    }
-
-    /// Return the number of devices.
-    pub(crate) fn len(&self) -> usize {
-        self.contexts.len()
     }
 
     /// Allocate a single TPU device from the pool of devices.

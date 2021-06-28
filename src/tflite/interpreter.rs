@@ -1,5 +1,5 @@
 use crate::{
-    coral_ffi::ffi,
+    ffi::ffi,
     edgetpu::Devices,
     error::{check_null_mut, Error},
     tflite::Tensor,
@@ -26,9 +26,8 @@ impl Interpreter {
         let edgetpu_context = devices.allocate_one()?;
 
         let model_path = path.as_ref().to_path_buf();
-        let model = unsafe { ffi::make_model(&model_path.display().to_string()) };
-        let interpreter =
-            unsafe { ffi::make_interpreter_from_model(model.clone(), edgetpu_context) }.unwrap();
+        let model = ffi::make_model(&model_path.display().to_string());
+        let interpreter = ffi::make_interpreter_from_model(model.clone(), edgetpu_context).unwrap();
 
         Ok(Self {
             interpreter,
@@ -47,12 +46,12 @@ impl Interpreter {
     }
 
     pub(crate) fn get_output_tensor_count(&self) -> usize {
-        unsafe { ffi::get_output_tensor_count(self.interpreter.clone()) }
+        ffi::get_output_tensor_count(self.interpreter.clone())
     }
 
     pub(crate) fn get_output_tensor(&self, index: usize) -> Result<Tensor<'_>, Error> {
         Tensor::new(
-            check_null_mut(unsafe { ffi::get_output_tensor(self.interpreter.clone(), index) })
+            check_null_mut(ffi::get_output_tensor(self.interpreter.clone(), index))
                 .ok_or(Error::GetOutputTensor)?,
         )
     }

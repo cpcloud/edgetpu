@@ -13,7 +13,9 @@ pub(crate) mod ffi {
     }
 
     enum DeviceType {
+        #[allow(dead_code)]
         Pci,
+        #[allow(dead_code)]
         Usb,
     }
 
@@ -28,7 +30,7 @@ pub(crate) mod ffi {
         include!("tensorflow/lite/interpreter.h");
         include!("tensorflow/lite/model.h");
         include!("tflite/public/edgetpu.h");
-        include!("tflite-pose/include/coral_ffi.h");
+        include!("tflite-pose/include/ffi.h");
 
         #[namespace = "tflite"]
         type Interpreter;
@@ -42,7 +44,10 @@ pub(crate) mod ffi {
         type PipelinedModelRunner;
 
         #[namespace = "internal"]
-        type Tensor;
+        type InputTensor;
+
+        #[namespace = "internal"]
+        type OutputTensor;
 
         fn make_pipelined_model_runner(
             interpreters: &mut [SharedPtr<Interpreter>],
@@ -59,18 +64,18 @@ pub(crate) mod ffi {
 
         fn push_input_tensors(
             runner: SharedPtr<PipelinedModelRunner>,
-            inputs: &mut [SharedPtr<Tensor>],
+            inputs: &mut [SharedPtr<InputTensor>],
         ) -> Result<bool>;
 
         fn pop_output_tensors(
             runner: SharedPtr<PipelinedModelRunner>,
-            outputs: &mut [UniquePtr<Tensor>],
+            outputs: &mut [UniquePtr<OutputTensor>],
         ) -> bool;
 
         fn make_input_tensor(
             runner: SharedPtr<PipelinedModelRunner>,
             data: &[u8],
-        ) -> SharedPtr<Tensor>;
+        ) -> SharedPtr<InputTensor>;
 
         fn get_segment_stats(runner: SharedPtr<PipelinedModelRunner>) -> Vec<SegStats>;
         fn get_queue_sizes(runner: SharedPtr<PipelinedModelRunner>) -> Vec<usize>;

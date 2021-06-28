@@ -1,12 +1,10 @@
-#include "tflite-pose/include/coral_ffi.h"
-#include "coral/pipeline/common.h"
+#include "tflite-pose/include/ffi.h"
 #include "coral/pipeline/pipelined_model_runner.h"
 #include "coral/tflite_utils.h"
-#include "glog/logging.h"
 #include "tensorflow/lite/c/c_api.h"
 #include "tensorflow/lite/interpreter.h"
 #include "tensorflow/lite/model.h"
-#include "tflite-pose/src/coral_ffi.rs.h"
+#include "tflite-pose/src/ffi.rs.h"
 #include "tflite/public/edgetpu.h"
 
 #include <algorithm>
@@ -66,7 +64,7 @@ std::shared_ptr<coral::PipelinedModelRunner> make_pipelined_model_runner(
   for (auto &interp : interpreters) {
     interps.push_back(interp.get());
   }
-  return std::make_shared<coral::PipelinedModelRunner>(interps);
+  return std::make_shared<coral::PipelinedModelRunner>(interps, nullptr, nullptr);
 }
 
 void set_pipelined_model_runner_input_queue_size(
@@ -105,33 +103,22 @@ std::shared_ptr<tflite::Interpreter> make_interpreter_from_model(
 
 namespace internal {
 
-Tensor::Tensor(coral::PipelineTensor tensor,
-               std::shared_ptr<coral::PipelinedModelRunner> runner)
+InputTensor::InputTensor(coral::PipelineTensor tensor,
+                         std::shared_ptr<coral::PipelinedModelRunner> runner)
     : tensor_(tensor), runner_(runner) {}
+coral::PipelineTensor InputTensor::tensor() { return tensor_; }
 
-coral::PipelineTensor Tensor::tensor() { return tensor_; }
-
-class InputTensor : public Tensor {
-public:
-  explicit InputTensor(coral::PipelineTensor tensor,
-                       std::shared_ptr<coral::PipelinedModelRunner> runner)
-      : Tensor(tensor, runner) {}
-  ~InputTensor() override = default;
-};
-
-class OutputTensor : public Tensor {
-public:
-  explicit OutputTensor(coral::PipelineTensor tensor,
-                        std::shared_ptr<coral::PipelinedModelRunner> runner)
-      : Tensor(tensor, runner) {}
-  ~OutputTensor() override {
-    runner_->GetOutputTensorAllocator()->Free(tensor_.buffer);
-  }
-};
+OutputTensor::OutputTensor(coral::PipelineTensor tensor,
+                           std::shared_ptr<coral::PipelinedModelRunner> runner)
+    : tensor_(tensor), runner_(runner) {}
+OutputTensor::~OutputTensor() {
+  runner_->GetOutputTensorAllocator()->Free(tensor_.buffer);
+}
+coral::PipelineTensor OutputTensor::tensor() { return tensor_; }
 
 } // namespace internal
 
-std::shared_ptr<internal::Tensor>
+std::shared_ptr<internal::InputTensor>
 make_input_tensor(std::shared_ptr<coral::PipelinedModelRunner> runner,
                   rust::Slice<const uint8_t> data) {
   auto buffer = runner->GetInputTensorAllocator()->Alloc(data.size());
@@ -144,8 +131,9 @@ make_input_tensor(std::shared_ptr<coral::PipelinedModelRunner> runner,
       runner);
 }
 
-bool push_input_tensors(std::shared_ptr<coral::PipelinedModelRunner> runner,
-                        rust::Slice<std::shared_ptr<internal::Tensor>> inputs) {
+bool push_input_tensors(
+    std::shared_ptr<coral::PipelinedModelRunner> runner,
+    rust::Slice<std::shared_ptr<internal::InputTensor>> inputs) {
   std::vector<coral::PipelineTensor> cpp_inputs;
   cpp_inputs.reserve(inputs.size());
   for (size_t i = 0; i < inputs.size(); ++i) {
@@ -156,12 +144,13 @@ bool push_input_tensors(std::shared_ptr<coral::PipelinedModelRunner> runner,
 
 bool pop_output_tensors(
     std::shared_ptr<coral::PipelinedModelRunner> runner,
-    rust::Slice<std::unique_ptr<internal::Tensor>> outputs) {
+    rust::Slice<std::unique_ptr<internal::OutputTensor>> outputs) {
   std::vector<coral::PipelineTensor> raw_outputs;
   auto result = runner->Pop(&raw_outputs);
 
   for (size_t i = 0; i < raw_outputs.size(); ++i) {
-    outputs[i] = std::make_unique<internal::OutputTensor>(raw_outputs[i], runner);
+    outputs[i] =
+        std::make_unique<internal::OutputTensor>(raw_outputs[i], runner);
   }
 
   return result;

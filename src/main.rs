@@ -25,7 +25,7 @@ use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 
 mod coral;
-mod coral_ffi;
+mod ffi;
 mod decode;
 mod edgetpu;
 mod engine;

@@ -1,6 +1,7 @@
+use cxx::UniquePtr;
 use crate::{
-    coral::{InputTensor, OutputTensor, PipelinedModelRunner},
-    coral_ffi::ffi,
+    coral::{InputTensor, PipelinedModelRunner},
+    ffi::ffi,
     decode::Decoder,
     edgetpu::Devices,
     error::Error,
@@ -95,7 +96,7 @@ where
         Ok(())
     }
 
-    pub(crate) fn pop(&self) -> Result<Vec<OutputTensor>, Error> {
+    pub(crate) fn pop(&self) -> Result<Vec<UniquePtr<ffi::OutputTensor>>, Error> {
         self.model_runner.pop()
     }
 

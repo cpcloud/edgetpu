@@ -1,5 +1,5 @@
 let
-  buildType = "debug";
+  buildType = "release";
   pkgs = import ./nix { inherit buildType; };
   inherit (pkgs) lib;
   sources = import ./nix/sources.nix;

@@ -2,14 +2,11 @@
 
 #include "rust/cxx.h"
 #include "coral/pipeline/common.h"
-#include "tensorflow/lite/c/c_api.h"
 
 #include <memory>
 
 namespace coral {
-
-class PipelinedModelRunner;
-
+  class PipelinedModelRunner;
 } // namespace coral
 
 namespace edgetpu {
@@ -27,14 +24,26 @@ class FlatBufferModel;
 
 namespace internal {
 
-class Tensor {
+class InputTensor {
 public:
-  explicit Tensor(coral::PipelineTensor tensor,
-                  std::shared_ptr<coral::PipelinedModelRunner> runner);
-  virtual ~Tensor() = 0;
+  explicit InputTensor(coral::PipelineTensor tensor,
+                       std::shared_ptr<coral::PipelinedModelRunner> runner);
+  ~InputTensor() = default;
   coral::PipelineTensor tensor();
 
-protected:
+private:
+  coral::PipelineTensor tensor_;
+  std::shared_ptr<coral::PipelinedModelRunner> runner_;
+};
+
+class OutputTensor {
+public:
+  explicit OutputTensor(coral::PipelineTensor tensor,
+                        std::shared_ptr<coral::PipelinedModelRunner> runner);
+  ~OutputTensor();
+  coral::PipelineTensor tensor();
+
+private:
   coral::PipelineTensor tensor_;
   std::shared_ptr<coral::PipelinedModelRunner> runner_;
 };
@@ -67,16 +76,16 @@ std::shared_ptr<tflite::Interpreter> make_interpreter_from_model(
     std::shared_ptr<tflite::FlatBufferModel> model,
     std::shared_ptr<edgetpu::EdgeTpuContext> edgetpu_context);
 
-std::shared_ptr<internal::Tensor>
+std::shared_ptr<internal::InputTensor>
 make_input_tensor(std::shared_ptr<coral::PipelinedModelRunner> runner,
                   rust::Slice<const uint8_t> data);
 
 bool push_input_tensors(std::shared_ptr<coral::PipelinedModelRunner> runner,
-        rust::Slice<std::shared_ptr<internal::Tensor>> inputs);
+        rust::Slice<std::shared_ptr<internal::InputTensor>> inputs);
 
 bool
 pop_output_tensors(std::shared_ptr<coral::PipelinedModelRunner> runner,
-        rust::Slice<std::unique_ptr<internal::Tensor>> outputs);
+        rust::Slice<std::unique_ptr<internal::OutputTensor>> outputs);
 
 rust::Vec<DeviceInfo> get_all_device_infos();
 

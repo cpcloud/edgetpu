@@ -4,27 +4,12 @@ use std::path::PathBuf;
 const LIBS: &[&str] = &["opencv4", "edgetpu", "tensorflow-lite", "coral"];
 
 fn main() -> Result<()> {
-    println!("cargo:rustc-link-lib=coral");
-    println!("cargo:rustc-link-lib=edgetpu");
-    println!(
-        "cargo:rustc-link-search=dylib=/nix/store/h08799k5yby8al44qv3hsk50v7gakq7r-glog-0.4.0"
-    );
-    println!("cargo:rustc-link-lib=dylib=glog");
-    println!("cargo:rustc-link-lib=static=tensorflow-lite");
-
-    println!("cargo:rerun-if-changed=wrapper.h");
-
-    println!("cargo:rerun-if-changed=src/coral_ffi.rs");
-    println!("cargo:rerun-if-changed=src/coral_ffi.cc");
-    println!("cargo:rerun-if-changed=include/coral_ffi.h");
-
     // XXX: why tho?
     //
     // https://stackoverflow.com/questions/28060294/linking-to-a-c-library-that-has-extern-c-functions
     // Seems like using extern "C" functions isn't totally transparent.
     //
     // Is adding an attribute to all TfLite.* APIs with `#[link(name = "tensorflow-lite")]` the real solution?
-    println!("cargo:rustc-flags=-l static=stdc++");
 
     let mut bindings = bindgen::Builder::default()
         .header("wrapper.h")
@@ -60,12 +45,24 @@ fn main() -> Result<()> {
         )
         .context("failed to write bindings to file")?;
 
-    cxx_build::bridge("src/coral_ffi.rs")
+    cxx_build::bridge("src/ffi.rs")
         .includes(&include_paths)
         .opt_level(3)
-        .file("src/coral_ffi.cc")
+        .file("src/ffi.cc")
         .flag_if_supported("-std=c++17")
         .compile("tflite_coral");
+
+    println!("cargo:rustc-link-lib=coral");
+    println!("cargo:rustc-link-lib=edgetpu");
+    println!("cargo:rustc-link-lib=static=tensorflow-lite");
+    println!("cargo:rustc-link-lib=absl_synchronization");
+
+    println!("cargo:rerun-if-changed=wrapper.h");
+    println!("cargo:rerun-if-changed=src/ffi.rs");
+    println!("cargo:rerun-if-changed=src/ffi.cc");
+    println!("cargo:rerun-if-changed=include/ffi.h");
+
+    println!("cargo:rustc-flags=-l static=stdc++");
 
     Ok(())
 }
