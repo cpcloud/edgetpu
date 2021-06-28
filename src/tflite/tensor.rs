@@ -2,8 +2,6 @@ use crate::{
     error::{check_null, Error},
     tflite_sys,
 };
-#[cfg(feature = "posenet_decoder")]
-use ndarray::{ArrayView, IntoDimension};
 use num_traits::ToPrimitive;
 use std::{convert::TryFrom, ffi::CStr, marker::PhantomData};
 
@@ -58,20 +56,6 @@ impl<'interp> Tensor<'interp> {
         unsafe { (*self.tensor).params }
     }
 
-    /// View a tensor's data as a slice of `T` values.
-    ///
-    /// # Safety
-    ///
-    /// The `self.tensor.data.raw` member must point to a valid array of `T`.
-    #[cfg(feature = "posenet_decoder")]
-    pub(crate) fn as_f32_slice(&'interp self) -> Result<&'interp [f32], Error> {
-        let typ = self.r#type();
-        if typ != tflite_sys::TfLiteType::kTfLiteFloat32 {
-            return Err(Error::GetTensorSlice(typ));
-        }
-        Ok(unsafe { std::slice::from_raw_parts((*self.tensor).data.f, self.len) })
-    }
-
     /// Mutable view of a tensor's data as a slice of `T` values.
     pub(crate) fn as_u8_slice(&'interp mut self) -> Result<&'interp [u8], Error> {
         let typ = self.r#type();
@@ -79,18 +63,6 @@ impl<'interp> Tensor<'interp> {
             return Err(Error::GetTensorSlice(typ));
         }
         Ok(unsafe { std::slice::from_raw_parts((*self.tensor).data.uint8, self.len) })
-    }
-
-    #[cfg(feature = "posenet_decoder")]
-    pub(crate) fn as_ndarray<T, I>(
-        &'interp self,
-        slice: &'interp [T],
-        dims: I,
-    ) -> Result<ArrayView<'interp, T, I::Dim>, Error>
-    where
-        I: IntoDimension,
-    {
-        ArrayView::from_shape(dims.into_dimension(), slice).map_err(Error::ConstructArrayView)
     }
 
     #[inline]

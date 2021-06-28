@@ -7,7 +7,6 @@ edition = "2018"
 [features]
 default = []
 gui = []
-posenet_decoder = []
 
 [dependencies]
 anyhow = "1.0.41"
@@ -22,7 +21,6 @@ num-derive = "0.3.3"
 num-traits = "0.2.14"
 opencv = { version = "0.53.0", features = ["clang-runtime"] }
 ordered-float = "2.5.1"
-rayon = "1.5.1"
 structopt = "0.3.21"
 thiserror = "1.0.25"
 tracing = "0.1.26"

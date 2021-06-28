@@ -29,10 +29,6 @@ pub(crate) enum Error {
     #[error("failed to get value of Mat::step1")]
     GetStep1(#[source] opencv::Error),
 
-    #[cfg(feature = "posenet_decoder")]
-    #[error("failed to construct array view from TfLiteTensor")]
-    ConstructArrayView(#[source] ndarray::ShapeError),
-
     #[error("failed to convert usize value to keypoint kind: {0}")]
     ConvertUSizeToKeypointKind(usize),
 
@@ -59,10 +55,6 @@ pub(crate) enum Error {
 
     #[error("failed to create edgetpu delegate: got null pointer")]
     CreateEdgeTpuDelegate,
-
-    #[cfg(feature = "posenet_decoder")]
-    #[error("failed to crate posenet decoder delegate")]
-    CreatePosenetDecoderDelegate,
 
     #[error("failed to get edgetpu device: no devices found")]
     GetEdgeTpuDevice,

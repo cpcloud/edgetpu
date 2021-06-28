@@ -1,11 +1,11 @@
 use crate::{
-    coral::{PipelineInputTensor, PipelineOutputTensor, PipelinedModelRunner},
+    coral::{InputTensor, OutputTensor, PipelinedModelRunner},
+    coral_ffi::ffi,
     decode::Decoder,
     edgetpu::Devices,
     error::Error,
-    pose, tflite, tflite_sys,
+    pose, tflite,
 };
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{
     path::Path,
     sync::{
@@ -55,13 +55,11 @@ where
 
         let mut interpreters = model_paths
             .iter()
-            .map(|p| p.as_ref().to_path_buf())
-            .collect::<Vec<_>>()
-            .into_par_iter()
             .map(|model_path| {
                 tflite::Interpreter::new(
-                    std::fs::canonicalize(&model_path)
-                        .map_err(move |e| Error::CanonicalizePath(e, model_path))?,
+                    std::fs::canonicalize(&model_path).map_err(move |e| {
+                        Error::CanonicalizePath(e, model_path.as_ref().to_path_buf())
+                    })?,
                     devices.clone(),
                 )
             })
@@ -73,9 +71,7 @@ where
         model_runner.set_output_queue_size(output_queue_size);
 
         decoder.validate_output_tensor_count(
-            model_runner
-                .output_interpreter()?
-                .get_output_tensor_count()?,
+            model_runner.output_interpreter()?.get_output_tensor_count(),
         )?;
 
         Ok(Self {
@@ -91,10 +87,7 @@ where
         self.model_runner.num_interpreters()
     }
 
-    pub(crate) fn push(
-        &self,
-        input_tensor: Option<Arc<Vec<PipelineInputTensor>>>,
-    ) -> Result<(), Error> {
+    pub(crate) fn push(&self, input_tensor: Option<Arc<Vec<InputTensor>>>) -> Result<(), Error> {
         *self.start_inference.lock().unwrap() = Instant::now();
         if !self.model_runner.push(input_tensor) {
             return Err(Error::PushTensors);
@@ -102,15 +95,15 @@ where
         Ok(())
     }
 
-    pub(crate) fn pop(&self) -> Result<Vec<PipelineOutputTensor>, Error> {
+    pub(crate) fn pop(&self) -> Result<Vec<OutputTensor>, Error> {
         self.model_runner.pop()
     }
 
-    pub(crate) fn segment_stats(&self) -> Result<Vec<tflite_sys::CoralSegmentStats>, Error> {
+    pub(crate) fn segment_stats(&self) -> Vec<ffi::SegStats> {
         self.model_runner.segment_stats()
     }
 
-    pub(crate) fn alloc_input_tensor(&self, input: &[u8]) -> Result<PipelineInputTensor, Error> {
+    pub(crate) fn alloc_input_tensor(&self, input: &[u8]) -> Result<InputTensor, Error> {
         self.model_runner.alloc_input_tensor(input)
     }
 

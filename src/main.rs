@@ -31,7 +31,6 @@ mod edgetpu;
 mod engine;
 mod error;
 mod pose;
-mod tf;
 mod tflite;
 mod tflite_sys;
 
@@ -339,7 +338,7 @@ fn main() -> Result<()> {
             let _output_tensors = engine.pop().context("failed to pop")?;
             let (poses, timing) = engine.decode_poses().context("failed detecting poses")?;
             poses_tx
-                .send((poses, timing, engine.frame_num(), engine.segment_stats()?))
+                .send((poses, timing, engine.frame_num(), engine.segment_stats()))
                 .unwrap();
         }
         Ok::<_, anyhow::Error>(())

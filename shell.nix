@@ -22,6 +22,7 @@ pkgs.mkShell {
     cargo-udeps
     cargo-bloat
     clang_10
+    cmake
     flatbuffers
     glog
     libcoral

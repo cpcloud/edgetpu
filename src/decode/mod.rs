@@ -54,36 +54,23 @@ pub(crate) trait Decoder {
 }
 
 mod hand_rolled;
-#[cfg(feature = "posenet_decoder")]
-mod posenet;
 
 #[derive(Debug, structopt::StructOpt)]
 pub(crate) enum Decode {
     /// Decode using the builtin PosenetDecoderOp
-    #[cfg(feature = "posenet_decoder")]
-    Posenet(posenet::Decoder),
     /// Decode using a hand rolled decoder
     HandRolled(hand_rolled::Decoder),
 }
 
 impl Default for Decode {
     fn default() -> Self {
-        #[cfg(feature = "posenet_decoder")]
-        {
-            Self::Posenet(Default::default())
-        }
-        #[cfg(not(feature = "posenet_decoder"))]
-        {
-            Self::HandRolled(Default::default())
-        }
+        Self::HandRolled(Default::default())
     }
 }
 
 impl Decoder for Decode {
     fn expected_output_tensors(&self) -> usize {
         match self {
-            #[cfg(feature = "posenet_decoder")]
-            Self::Posenet(d) => d.expected_output_tensors(),
             Self::HandRolled(d) => d.expected_output_tensors(),
         }
     }
@@ -93,8 +80,6 @@ impl Decoder for Decode {
         I: Deref<Target = tflite::Interpreter>,
     {
         match self {
-            #[cfg(feature = "posenet_decoder")]
-            Self::Posenet(d) => d.decode_output(interp),
             Self::HandRolled(d) => d.decode_output(interp),
         }
     }

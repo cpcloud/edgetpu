@@ -29,6 +29,14 @@ import /home/cloud/src/nixpkgs {
       ];
     })
     (self: super: {
+      glog = super.glog.overrideAttrs (old: {
+        cmakeFlags = old.cmakeFlags ++ [ "-DCMAKE_CXX_STANDARD=17" ];
+      });
+      gflags = super.gflags.overrideAttrs (old: {
+        cmakeFlags = old.cmakeFlags ++ [ "-DCMAKE_CXX_STANDARD=17" ];
+      });
+    })
+    (self: super: {
       inherit (import sources.niv { }) niv;
     })
     (self: super: {

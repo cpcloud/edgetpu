@@ -6,11 +6,17 @@ const LIBS: &[&str] = &["opencv4", "edgetpu", "tensorflow-lite", "coral"];
 fn main() -> Result<()> {
     println!("cargo:rustc-link-lib=coral");
     println!("cargo:rustc-link-lib=edgetpu");
-    #[cfg(feature = "posenet_decoder")]
-    println!("cargo:rustc-link-lib=posenet_decoder");
+    println!(
+        "cargo:rustc-link-search=dylib=/nix/store/h08799k5yby8al44qv3hsk50v7gakq7r-glog-0.4.0"
+    );
+    println!("cargo:rustc-link-lib=dylib=glog");
     println!("cargo:rustc-link-lib=static=tensorflow-lite");
 
     println!("cargo:rerun-if-changed=wrapper.h");
+
+    println!("cargo:rerun-if-changed=src/coral_ffi.rs");
+    println!("cargo:rerun-if-changed=src/coral_ffi.cc");
+    println!("cargo:rerun-if-changed=include/coral_ffi.h");
 
     // XXX: why tho?
     //
@@ -54,15 +60,12 @@ fn main() -> Result<()> {
         )
         .context("failed to write bindings to file")?;
 
-    println!("cargo:rerun-if-changed=src/coral_ffi.rs");
-    println!("cargo:rerun-if-changed=src/coral_ffi.h");
-    println!("cargo:rerun-if-changed=src/coral_ffi.cc");
     cxx_build::bridge("src/coral_ffi.rs")
-        .includes(include_paths)
+        .includes(&include_paths)
+        .opt_level(3)
         .file("src/coral_ffi.cc")
         .flag_if_supported("-std=c++17")
-        .flag_if_supported("-O3")
-        .compile("tflite_thing");
+        .compile("tflite_coral");
 
     Ok(())
 }

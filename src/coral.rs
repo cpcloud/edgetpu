@@ -1,30 +1,16 @@
-use crate::{
-    error::{check_null_mut, Error},
-    tflite::Interpreter,
-    tflite_sys,
-};
-use more_asserts::assert_gt;
-use std::sync::{
-    atomic::{AtomicPtr, Ordering},
-    Arc,
-};
+use crate::{coral_ffi::ffi, error::Error, tflite::Interpreter};
+use cxx::{SharedPtr, UniquePtr};
+use std::sync::Arc;
 use tracing::{debug, instrument};
-
-struct RawPipelinedModelRunner(AtomicPtr<tflite_sys::CoralPipelinedModelRunner>);
-
-impl Drop for RawPipelinedModelRunner {
-    fn drop(&mut self) {
-        unsafe {
-            tflite_sys::CoralPipelinedModelRunnerDestroy(self.0.load(Ordering::SeqCst));
-        }
-    }
-}
 
 #[derive(Clone)]
 pub(crate) struct PipelinedModelRunner {
-    runner: Arc<RawPipelinedModelRunner>,
+    runner: SharedPtr<ffi::PipelinedModelRunner>,
     interpreters: Box<[Interpreter]>,
 }
+
+unsafe impl Sync for PipelinedModelRunner {}
+unsafe impl Send for PipelinedModelRunner {}
 
 impl PipelinedModelRunner {
     pub(crate) fn new(mut interpreters: Vec<Interpreter>) -> Result<Self, Error> {
@@ -34,24 +20,15 @@ impl PipelinedModelRunner {
 
         let mut pointers = interpreters
             .iter_mut()
-            .map(|interp| check_null_mut(interp.as_mut_ptr()).ok_or(Error::GetInterpreter))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|interp| interp.raw())
+            .collect::<Vec<_>>();
 
         if pointers.is_empty() {
             return Err(Error::GetInterpreterPointers);
         }
 
         Ok(Self {
-            runner: Arc::new(RawPipelinedModelRunner(AtomicPtr::new(
-                check_null_mut(unsafe {
-                    tflite_sys::CoralPipelinedModelRunnerCreate(
-                        check_null_mut(pointers.as_mut_slice().as_mut_ptr())
-                            .ok_or(Error::GetInterpreterVecPointer)?,
-                        interpreters.len(),
-                    )
-                })
-                .ok_or(Error::CreatePipelinedModelRunner)?,
-            ))),
+            runner: unsafe { ffi::make_pipelined_model_runner(&mut pointers) },
             interpreters: interpreters.into_boxed_slice(),
         })
     }
@@ -65,51 +42,19 @@ impl PipelinedModelRunner {
     }
 
     pub(crate) fn set_input_queue_size(&mut self, size: usize) {
-        unsafe { tflite_sys::CoralPipelinedModelRunnerSetInputQueueSize(self.as_mut_ptr(), size) }
+        unsafe { ffi::set_pipelined_model_runner_input_queue_size(self.runner.clone(), size) }
     }
 
     pub(crate) fn set_output_queue_size(&mut self, size: usize) {
-        unsafe { tflite_sys::CoralPipelinedModelRunnerSetOutputQueueSize(self.as_mut_ptr(), size) }
+        unsafe { ffi::set_pipelined_model_runner_output_queue_size(self.runner.clone(), size) }
     }
 
-    pub(crate) fn segment_stats(&self) -> Result<Vec<tflite_sys::CoralSegmentStats>, Error> {
-        let mut n = 0_usize;
-        let stats = check_null_mut(unsafe {
-            tflite_sys::CoralPipelinedModelRunnerGetSegmentStats(self.as_mut_ptr(), &mut n)
-        })
-        .ok_or(Error::GetSegmentStats)?;
-
-        if n == 0 {
-            return Err(Error::EmptySegmentStats);
-        }
-
-        let mut result = Vec::with_capacity(n);
-        unsafe {
-            std::ptr::copy(stats, result.as_mut_ptr(), n);
-            result.set_len(n);
-            tflite_sys::CoralPipelinedModelRunnerDestroySegmentStats(stats);
-        }
-        Ok(result)
+    pub(crate) fn segment_stats(&self) -> Vec<ffi::SegStats> {
+        unsafe { ffi::get_segment_stats(self.runner.clone()) }
     }
 
-    pub(crate) fn as_mut_ptr(&self) -> *mut tflite_sys::CoralPipelinedModelRunner {
-        self.runner.0.load(Ordering::SeqCst)
-    }
-
-    pub(crate) fn queue_sizes(&self) -> Result<Vec<usize>, Error> {
-        let mut n = 0_usize;
-        let sizes = check_null_mut(unsafe {
-            tflite_sys::CoralPipelinedModelRunnerGetQueueSizes(self.as_mut_ptr(), &mut n)
-        })
-        .ok_or(Error::GetQueueSizesPointer)?;
-
-        let mut result = Vec::with_capacity(n);
-        unsafe {
-            std::ptr::copy(sizes, result.as_mut_ptr(), n);
-            result.set_len(n);
-            tflite_sys::CoralPipelinedModelRunnerDestroyQueueSizes(sizes);
-        }
-        Ok(result)
+    pub(crate) fn queue_sizes(&self) -> Vec<usize> {
+        unsafe { ffi::get_queue_sizes(self.runner.clone()) }
     }
 
     #[instrument(
@@ -117,149 +62,67 @@ impl PipelinedModelRunner {
         skip(self, tensors),
         level = "debug"
     )]
-    pub(crate) fn push(&self, tensors: Option<Arc<Vec<PipelineInputTensor>>>) -> bool {
-        let (mut ptrs, len) = tensors.map_or_else(
-            || (vec![], 0),
-            |tensors| {
-                let len = tensors.len();
-                (
-                    tensors
-                        .iter()
-                        .map(|tensor| tensor.as_mut_ptr())
-                        .collect::<Vec<_>>(),
-                    len,
-                )
-            },
-        );
-        debug!("pushing to input queue {:?}", self.queue_sizes().unwrap());
-        unsafe {
-            tflite_sys::CoralPipelinedModelRunnerPush(
-                self.as_mut_ptr(),
-                ptrs.as_mut_slice().as_mut_ptr(),
-                len,
-            )
-        }
+    pub(crate) fn push(&self, tensors: Option<Arc<Vec<InputTensor>>>) -> bool {
+        let mut ptrs = tensors.map_or_else(Default::default, |tensors| {
+            tensors
+                .iter()
+                .map(|tensor| tensor.raw())
+                .collect::<Vec<_>>()
+        });
+        unsafe { ffi::push_input_tensors(self.runner.clone(), &mut ptrs) }.unwrap()
     }
 
     #[instrument(name = "PipelinedModelRunner::pop", skip(self), level = "debug")]
-    pub(crate) fn pop(&self) -> Result<Vec<PipelineOutputTensor>, Error> {
-        let num_output_tensors = self.output_interpreter()?.get_output_tensor_count()?;
-        let mut tensors = vec![std::ptr::null_mut(); num_output_tensors];
-        let mut len = 0_usize;
-        let succeeded = unsafe {
-            tflite_sys::CoralPipelinedModelRunnerPop(
-                self.as_mut_ptr(),
-                tensors.as_mut_slice().as_mut_ptr(),
-                &mut len,
-            )
-        };
-
-        assert_gt!(len, 0, "got zero output tensors");
+    pub(crate) fn pop(&self) -> Result<Vec<OutputTensor>, Error> {
+        let num_output_tensors = self.output_interpreter()?.get_output_tensor_count();
+        let mut tensors = Vec::with_capacity(num_output_tensors);
+        let succeeded = unsafe { ffi::pop_output_tensors(self.runner.clone(), &mut tensors) };
+        unsafe {
+            tensors.set_len(num_output_tensors);
+        }
 
         if succeeded {
-            debug!("popping from output queue {:?}", self.queue_sizes()?);
+            debug!("popping from output queue {:?}", self.queue_sizes());
             tensors
                 .into_iter()
-                .map(|ptr| PipelineOutputTensor::new(ptr, self.clone()))
+                .map(OutputTensor::new)
                 .collect::<Result<Vec<_>, _>>()
         } else {
             Err(Error::PopPipelinedModelOutputTensors)
         }
     }
 
-    pub(crate) fn alloc_input_tensor(&self, data: &[u8]) -> Result<PipelineInputTensor, Error> {
-        let size = data.len();
-        PipelineInputTensor::new(
-            check_null_mut(unsafe {
-                let raw = tflite_sys::CoralPipelineTensorCreate(
-                    self.as_mut_ptr(),
-                    size,
-                    tflite_sys::TfLiteType::kTfLiteUInt8,
-                );
-                tflite_sys::CoralPipelineTensorCopyFromBuffer(raw, data.as_ptr().cast(), size);
-                raw
-            })
-            .ok_or(Error::AllocInputTensor)?,
-        )
-    }
-}
-
-struct RawInputTensor(AtomicPtr<tflite_sys::CoralPipelineTensor>);
-
-impl RawInputTensor {
-    fn as_mut_ptr(&self) -> *mut tflite_sys::CoralPipelineTensor {
-        self.0.load(Ordering::SeqCst)
-    }
-}
-
-impl Drop for RawInputTensor {
-    fn drop(&mut self) {
-        unsafe {
-            tflite_sys::CoralPipelineInputTensorDestroy(self.as_mut_ptr());
-        }
+    pub(crate) fn alloc_input_tensor(&self, data: &[u8]) -> Result<InputTensor, Error> {
+        InputTensor::new(unsafe { ffi::make_input_tensor(self.runner.clone(), data) })
     }
 }
 
 /// The buffer inside these are owned by the allocator, so we do not implement Drop.
 #[derive(Clone)]
-pub(crate) struct PipelineInputTensor {
-    tensor: Arc<RawInputTensor>,
+pub(crate) struct InputTensor {
+    tensor: SharedPtr<ffi::Tensor>,
 }
 
-impl PipelineInputTensor {
-    fn new(tensor: *mut tflite_sys::CoralPipelineTensor) -> Result<Self, Error> {
-        Ok(Self {
-            tensor: Arc::new(RawInputTensor(AtomicPtr::new(
-                check_null_mut(tensor).ok_or(Error::GetPipelineInputTensor)?,
-            ))),
-        })
+unsafe impl Send for InputTensor {}
+unsafe impl Sync for InputTensor {}
+
+impl InputTensor {
+    fn new(tensor: SharedPtr<ffi::Tensor>) -> Result<Self, Error> {
+        Ok(Self { tensor })
     }
 
-    fn as_mut_ptr(&self) -> *mut tflite_sys::CoralPipelineTensor {
-        self.tensor.as_mut_ptr()
-    }
-}
-
-struct RawOutputTensor {
-    tensor: AtomicPtr<tflite_sys::CoralPipelineTensor>,
-    runner: PipelinedModelRunner,
-}
-
-impl RawOutputTensor {
-    fn as_mut_ptr(&self) -> *mut tflite_sys::CoralPipelineTensor {
-        self.tensor.load(Ordering::SeqCst)
-    }
-}
-
-impl Drop for RawOutputTensor {
-    fn drop(&mut self) {
-        unsafe {
-            tflite_sys::CoralPipelineOutputTensorDestroy(
-                self.runner.as_mut_ptr(),
-                self.as_mut_ptr(),
-            );
-        }
+    fn raw(&self) -> SharedPtr<ffi::Tensor> {
+        self.tensor.clone()
     }
 }
 
 /// The buffer inside these are NOT owned by the allocator, so we implement Drop.
-#[derive(Clone)]
-pub(crate) struct PipelineOutputTensor {
-    tensor: Arc<RawOutputTensor>,
+pub(crate) struct OutputTensor {
+    tensor: UniquePtr<ffi::Tensor>,
 }
 
-impl PipelineOutputTensor {
-    fn new(
-        tensor: *mut tflite_sys::CoralPipelineTensor,
-        runner: PipelinedModelRunner,
-    ) -> Result<Self, Error> {
-        Ok(Self {
-            tensor: Arc::new(RawOutputTensor {
-                tensor: AtomicPtr::new(
-                    check_null_mut(tensor).ok_or(Error::GetPipelineOutputTensor)?,
-                ),
-                runner,
-            }),
-        })
+impl OutputTensor {
+    fn new(tensor: UniquePtr<ffi::Tensor>) -> Result<Self, Error> {
+        Ok(Self { tensor })
     }
 }
