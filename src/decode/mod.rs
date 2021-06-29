@@ -57,7 +57,6 @@ mod hand_rolled;
 
 #[derive(Debug, structopt::StructOpt)]
 pub(crate) enum Decode {
-    /// Decode using the builtin PosenetDecoderOp
     /// Decode using a hand rolled decoder
     HandRolled(hand_rolled::Decoder),
 }
