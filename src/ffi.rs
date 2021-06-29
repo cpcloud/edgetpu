@@ -1,10 +1,4 @@
-use cxx::{type_id, ExternType};
-
-unsafe impl ExternType for crate::tflite_sys::TfLiteTensor {
-    type Id = type_id!("TfLiteTensor");
-    type Kind = cxx::kind::Opaque;
-}
-
+#![allow(unreachable_pub)]
 #[cxx::bridge]
 pub(crate) mod ffi {
     struct SegStats {
@@ -43,20 +37,23 @@ pub(crate) mod ffi {
         #[namespace = "coral"]
         type PipelinedModelRunner;
 
-        #[namespace = "internal"]
-        type InputTensor;
+        #[namespace = "coral"]
+        type PipelineTensor;
 
         #[namespace = "internal"]
         type OutputTensor;
 
+        type TfLiteTensor = crate::tflite_sys::TfLiteTensor;
+
         fn make_pipelined_model_runner(
-            interpreters: &mut [SharedPtr<Interpreter>],
+            interpreters: &[SharedPtr<Interpreter>],
         ) -> SharedPtr<PipelinedModelRunner>;
 
         fn set_pipelined_model_runner_input_queue_size(
             runner: SharedPtr<PipelinedModelRunner>,
             size: usize,
         );
+
         fn set_pipelined_model_runner_output_queue_size(
             runner: SharedPtr<PipelinedModelRunner>,
             size: usize,
@@ -64,7 +61,7 @@ pub(crate) mod ffi {
 
         fn push_input_tensors(
             runner: SharedPtr<PipelinedModelRunner>,
-            inputs: &mut [SharedPtr<InputTensor>],
+            inputs: &mut [SharedPtr<PipelineTensor>],
         ) -> Result<bool>;
 
         fn pop_output_tensors(
@@ -75,15 +72,14 @@ pub(crate) mod ffi {
         fn make_input_tensor(
             runner: SharedPtr<PipelinedModelRunner>,
             data: &[u8],
-        ) -> SharedPtr<InputTensor>;
+        ) -> SharedPtr<PipelineTensor>;
 
-        fn get_segment_stats(runner: SharedPtr<PipelinedModelRunner>) -> Vec<SegStats>;
-        fn get_queue_sizes(runner: SharedPtr<PipelinedModelRunner>) -> Vec<usize>;
+        fn get_queue_sizes(runner: &PipelinedModelRunner) -> Vec<usize>;
 
-        fn make_model(model_path: &str) -> SharedPtr<FlatBufferModel>;
+        fn make_model(model_path: &str) -> UniquePtr<FlatBufferModel>;
 
         fn make_interpreter_from_model(
-            model: SharedPtr<FlatBufferModel>,
+            model: &FlatBufferModel,
             edgetpu_context: SharedPtr<EdgeTpuContext>,
         ) -> Result<SharedPtr<Interpreter>>;
 
@@ -94,13 +90,8 @@ pub(crate) mod ffi {
 
         fn get_all_device_infos() -> Vec<DeviceInfo>;
 
-        fn get_output_tensor_count(interpreter: SharedPtr<Interpreter>) -> usize;
+        fn get_output_tensor_count(interpreter: &Interpreter) -> usize;
 
-        type TfLiteTensor = crate::tflite_sys::TfLiteTensor;
-
-        fn get_output_tensor(
-            interpreter: SharedPtr<Interpreter>,
-            index: usize,
-        ) -> *mut TfLiteTensor;
+        fn get_output_tensor(interpreter: &Interpreter, index: usize) -> *const TfLiteTensor;
     }
 }

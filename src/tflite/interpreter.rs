@@ -1,19 +1,18 @@
 use crate::{
-    ffi::ffi,
     edgetpu::Devices,
-    error::{check_null_mut, Error},
+    error::{check_null, Error},
+    ffi::ffi,
     tflite::Tensor,
 };
-use cxx::SharedPtr;
+use cxx::{SharedPtr, UniquePtr};
 use std::path::{Path, PathBuf};
 use tracing::{info, instrument};
 
-#[derive(Clone)]
 pub(crate) struct Interpreter {
     interpreter: SharedPtr<ffi::Interpreter>,
-    model: SharedPtr<ffi::FlatBufferModel>,
     model_path: PathBuf,
-    devices: Devices,
+    _model: UniquePtr<ffi::FlatBufferModel>,
+    _devices: Devices,
 }
 
 impl Interpreter {
@@ -22,22 +21,26 @@ impl Interpreter {
     where
         P: AsRef<Path>,
     {
-        info!(message = "constructing interpreter", path = %path.as_ref().display());
+        info!(path = %path.as_ref().display());
         let edgetpu_context = devices.allocate_one()?;
 
         let model_path = path.as_ref().to_path_buf();
-        let model = ffi::make_model(&model_path.display().to_string());
-        let interpreter = ffi::make_interpreter_from_model(model.clone(), edgetpu_context).unwrap();
+        let path = model_path
+            .as_os_str()
+            .to_str()
+            .ok_or_else(|| Error::GetModelPathAsStr(model_path.clone()))?;
+        let model = ffi::make_model(path);
+        let interpreter = ffi::make_interpreter_from_model(&*model, edgetpu_context).unwrap();
 
         Ok(Self {
             interpreter,
             model_path,
-            model,
-            devices,
+            _model: model,
+            _devices: devices,
         })
     }
 
-    pub(crate) fn raw(&self) -> SharedPtr<ffi::Interpreter> {
+    pub(crate) fn as_inner(&self) -> SharedPtr<ffi::Interpreter> {
         self.interpreter.clone()
     }
 
@@ -46,12 +49,12 @@ impl Interpreter {
     }
 
     pub(crate) fn get_output_tensor_count(&self) -> usize {
-        ffi::get_output_tensor_count(self.interpreter.clone())
+        ffi::get_output_tensor_count(&*self.interpreter)
     }
 
     pub(crate) fn get_output_tensor(&self, index: usize) -> Result<Tensor<'_>, Error> {
         Tensor::new(
-            check_null_mut(ffi::get_output_tensor(self.interpreter.clone(), index))
+            check_null(ffi::get_output_tensor(&*self.interpreter, index))
                 .ok_or(Error::GetOutputTensor)?,
         )
     }

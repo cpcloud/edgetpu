@@ -1,12 +1,12 @@
-use cxx::UniquePtr;
 use crate::{
-    coral::{InputTensor, PipelinedModelRunner},
-    ffi::ffi,
+    coral::{PipelineTensor, PipelinedModelRunner},
     decode::Decoder,
     edgetpu::Devices,
     error::Error,
+    ffi::ffi,
     pose, tflite,
 };
+use cxx::UniquePtr;
 use std::{
     path::Path,
     sync::{
@@ -31,10 +31,7 @@ pub(crate) struct Timing {
     pub(crate) decoding: Duration,
 }
 
-impl<D> Engine<D>
-where
-    D: Decoder,
-{
+impl<D> Engine<D> {
     /// Construct a new Engine for pose estimation.
     ///
     /// `model_path` is a valid path to a Tensorflow Lite Flatbuffer-based model.
@@ -47,6 +44,7 @@ where
     ) -> Result<Self, Error>
     where
         P: AsRef<Path>,
+        D: Decoder,
     {
         if model_paths.is_empty() {
             return Err(Error::ConstructPoseEngine);
@@ -84,34 +82,28 @@ where
         })
     }
 
-    pub(crate) fn num_interpreters(&self) -> usize {
-        self.model_runner.num_interpreters()
-    }
-
-    pub(crate) fn push(&self, input_tensor: Option<Arc<Vec<InputTensor>>>) -> Result<(), Error> {
+    pub(crate) fn push(&self, input_tensor: Option<Arc<Vec<PipelineTensor>>>) -> Result<(), Error> {
         *self.start_inference.lock().unwrap() = Instant::now();
-        if !self.model_runner.push(input_tensor) {
-            return Err(Error::PushTensors);
-        }
+        self.model_runner.push(input_tensor)?;
         Ok(())
     }
 
-    pub(crate) fn pop(&self) -> Result<Vec<UniquePtr<ffi::OutputTensor>>, Error> {
-        self.model_runner.pop()
+    pub(crate) fn pop(&self) -> Option<Vec<UniquePtr<ffi::OutputTensor>>> {
+        let result = self.model_runner.pop();
+        let mut timing = self.timing.lock().unwrap();
+        timing.inference += self.start_inference.lock().unwrap().elapsed();
+        result
     }
 
-    pub(crate) fn segment_stats(&self) -> Vec<ffi::SegStats> {
-        self.model_runner.segment_stats()
-    }
-
-    pub(crate) fn alloc_input_tensor(&self, input: &[u8]) -> Result<InputTensor, Error> {
+    pub(crate) fn alloc_input_tensor(&self, input: &[u8]) -> PipelineTensor {
         self.model_runner.alloc_input_tensor(input)
     }
 
-    pub(crate) fn decode_poses(&self) -> Result<(Box<[pose::Pose]>, Timing), Error> {
+    pub(crate) fn decode_poses(&self) -> Result<Box<[pose::Pose]>, Error>
+    where
+        D: Decoder,
+    {
         let mut timing = self.timing.lock().unwrap();
-        timing.inference += self.start_inference.lock().unwrap().elapsed();
-
         let start_decoding = Instant::now();
         let poses = self
             .decoder
@@ -119,7 +111,11 @@ where
         timing.decoding += start_decoding.elapsed();
 
         self.frame_num.fetch_add(1, Ordering::SeqCst);
-        Ok((poses, *timing))
+        Ok(poses)
+    }
+
+    pub(crate) fn timing(&self) -> Timing {
+        *self.timing.lock().unwrap()
     }
 
     pub(crate) fn frame_num(&self) -> usize {

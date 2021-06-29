@@ -7,7 +7,6 @@ use ndarray::{Array, Array1, Array2, Array3};
 use num_traits::{cast::ToPrimitive, Zero};
 use ordered_float::NotNan;
 use point::Point;
-use std::ops::Deref;
 
 mod adjacency_list;
 mod keypoint_priority_queue;
@@ -535,18 +534,15 @@ impl crate::decode::Decoder for Decoder {
         3
     }
 
-    fn decode_output<I>(&self, interp: I) -> Result<Box<[pose::Pose]>, Error>
-    where
-        I: Deref<Target = tflite::Interpreter>,
-    {
+    fn decode_output(&self, interp: &tflite::Interpreter) -> Result<Box<[pose::Pose]>, Error> {
         use pose::NUM_KEYPOINTS;
 
         let recip_output_stride = f32::from(self.output_stride).recip();
 
-        let mut heatmap_tensor = interp.get_output_tensor_by_name("float_heatmaps")?;
+        let heatmap_tensor = interp.get_output_tensor_by_name("float_heatmaps")?;
         let frame_height = heatmap_tensor.dim(1)?;
         let frame_width = heatmap_tensor.dim(2)?;
-        let heatmaps = heatmap_tensor.dequantized()?;
+        let heatmaps = heatmap_tensor.dequantized_with_scale(1.0)?;
         let shorts = interp
             .get_output_tensor_by_name("float_short_offsets")?
             .dequantized_with_scale(recip_output_stride)?;

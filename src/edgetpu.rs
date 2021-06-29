@@ -1,4 +1,4 @@
-use crate::{ffi::ffi, error::Error};
+use crate::{error::Error, ffi::ffi};
 use bitvec::{bitbox, prelude::BitBox};
 use cxx::SharedPtr;
 use std::sync::{Arc, Mutex};
@@ -14,15 +14,13 @@ pub(crate) struct Devices {
 impl Devices {
     /// Construct a list of edgetpu devices.
     pub(crate) fn new() -> Result<Self, Error> {
-        let contexts = Arc::new(
-            ffi::get_all_device_infos()
-                .into_iter()
-                .map(|ffi::DeviceInfo { typ, path }| ffi::make_edge_tpu_context(typ, &path))
-                .collect::<Vec<_>>(),
-        );
+        let contexts = ffi::get_all_device_infos()
+            .into_iter()
+            .map(|ffi::DeviceInfo { typ, path }| ffi::make_edge_tpu_context(typ, &path))
+            .collect::<Vec<_>>();
         let len = contexts.len();
         Ok(Self {
-            contexts,
+            contexts: Arc::new(contexts),
             allocated: Arc::new(Mutex::new(bitbox![0; len])),
         })
     }
@@ -30,8 +28,7 @@ impl Devices {
     /// Allocate a single TPU device from the pool of devices.
     #[instrument(name = "Devices::allocate_one", skip(self))]
     pub(crate) fn allocate_one(&self) -> Result<SharedPtr<ffi::EdgeTpuContext>, Error> {
-        Ok(self
-            .contexts
+        self.contexts
             .iter()
             .cloned()
             .enumerate()
@@ -44,6 +41,6 @@ impl Devices {
                     None
                 }
             })
-            .ok_or(Error::FindEdgeTpuDevice)?)
+            .ok_or(Error::FindEdgeTpuDevice)
     }
 }

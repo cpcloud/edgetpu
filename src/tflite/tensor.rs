@@ -6,8 +6,7 @@ use num_traits::ToPrimitive;
 use std::{convert::TryFrom, ffi::CStr, marker::PhantomData};
 
 fn dim(tensor: *const tflite_sys::TfLiteTensor, index: usize) -> Result<usize, Error> {
-    assert!(!tensor.is_null());
-    let dims = num_dims(tensor)?;
+    let dims = num_dims(check_null(tensor).ok_or(Error::GetTensorForDim)?)?;
     if index >= dims {
         return Err(Error::GetDim(index, dims));
     }
@@ -19,9 +18,11 @@ fn dim(tensor: *const tflite_sys::TfLiteTensor, index: usize) -> Result<usize, E
 }
 
 fn num_dims(tensor: *const tflite_sys::TfLiteTensor) -> Result<usize, Error> {
-    assert!(!tensor.is_null());
     // # SAFETY: self.tensor is guaranteed to be valid
-    usize::try_from(unsafe { tflite_sys::TfLiteTensorNumDims(tensor) }).map_err(Error::GetNumDims)
+    usize::try_from(unsafe {
+        tflite_sys::TfLiteTensorNumDims(check_null(tensor).ok_or(Error::GetTensorForNumDims)?)
+    })
+    .map_err(Error::GetNumDims)
 }
 
 /// A safe wrapper around TfLiteTensor.
@@ -48,16 +49,16 @@ impl<'interp> Tensor<'interp> {
             .map_err(Error::GetTensorName)
     }
 
-    pub(crate) fn r#type(&self) -> tflite_sys::TfLiteType {
+    fn r#type(&self) -> tflite_sys::TfLiteType {
         unsafe { (*self.tensor).type_ }
     }
 
-    pub(crate) fn quantization_params(&self) -> tflite_sys::TfLiteQuantizationParams {
+    fn quantization_params(&self) -> tflite_sys::TfLiteQuantizationParams {
         unsafe { (*self.tensor).params }
     }
 
     /// Mutable view of a tensor's data as a slice of `T` values.
-    pub(crate) fn as_u8_slice(&'interp mut self) -> Result<&'interp [u8], Error> {
+    fn as_u8_slice(&'interp self) -> Result<&'interp [u8], Error> {
         let typ = self.r#type();
         if typ != tflite_sys::TfLiteType::kTfLiteUInt8 {
             return Err(Error::GetTensorSlice(typ));
@@ -65,15 +66,7 @@ impl<'interp> Tensor<'interp> {
         Ok(unsafe { std::slice::from_raw_parts((*self.tensor).data.uint8, self.len) })
     }
 
-    #[inline]
-    pub(crate) fn dequantized(&'interp mut self) -> Result<Vec<f32>, Error> {
-        self.dequantized_with_scale(1.0)
-    }
-
-    pub(crate) fn dequantized_with_scale(
-        &'interp mut self,
-        mut scale: f32,
-    ) -> Result<Vec<f32>, Error> {
+    pub(crate) fn dequantized_with_scale(&'interp self, mut scale: f32) -> Result<Vec<f32>, Error> {
         let tflite_sys::TfLiteQuantizationParams {
             zero_point,
             scale: quant_scale,
@@ -84,7 +77,7 @@ impl<'interp> Tensor<'interp> {
             .as_u8_slice()?
             .iter()
             .map(|&value| (f32::from(value) - zero_point) * scale)
-            .collect())
+            .collect::<Vec<_>>())
     }
 
     pub(crate) fn dim(&self, index: usize) -> Result<usize, Error> {

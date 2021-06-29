@@ -79,9 +79,6 @@ pub(crate) enum Error {
     #[error("failed to convert Point2f {0:?} to Point2i")]
     ConvertPoint2fToPoint2i(opencv::core::Point2f),
 
-    #[error("failed to pop pipelined model output tensors")]
-    PopPipelinedModelOutputTensors,
-
     #[error("failed to get output interpreter")]
     GetOutputInterpreter,
 
@@ -100,23 +97,20 @@ pub(crate) enum Error {
     #[error("cannot construct PipelinedModelRunner from empty interpreters list")]
     ConstructPipelineModelRunnerFromInterpreters,
 
-    #[error("failed to push tensors")]
-    PushTensors,
-
     #[error("got empty interpreter pointers vec")]
     GetInterpreterPointers,
 
-    #[error("failed to convert i64 to u64")]
-    ConvertI64ToU64(#[source] std::num::TryFromIntError),
-}
+    #[error("failed to get model path as &str: {0:?}")]
+    GetModelPathAsStr(std::path::PathBuf),
 
-/// Check whether a pointer to mut T data is null.
-pub(crate) fn check_null_mut<T>(ptr: *mut T) -> Option<*mut T> {
-    if ptr.is_null() {
-        None
-    } else {
-        Some(ptr)
-    }
+    #[error("got null pointer for TfLiteTensor when computing dimension size")]
+    GetTensorForDim,
+
+    #[error("got null pointer for TfLiteTensor when computing number of dimensions")]
+    GetTensorForNumDims,
+
+    #[error("failed to push input tensors")]
+    PushInputTensors(#[source] cxx::Exception),
 }
 
 /// Check whether a pointer to const T is null.

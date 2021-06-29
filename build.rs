@@ -45,12 +45,17 @@ fn main() -> Result<()> {
         )
         .context("failed to write bindings to file")?;
 
-    cxx_build::bridge("src/ffi.rs")
+    let mut build = cxx_build::bridge("src/ffi.rs");
+    let mut build = build
         .includes(&include_paths)
-        .opt_level(3)
         .file("src/ffi.cc")
         .flag_if_supported("-std=c++17")
-        .compile("tflite_coral");
+        .flag_if_supported(if cfg!(debug_assertions) { "-Og" } else { "-O3" });
+
+    if cfg!(debug_assertions) {
+        build = build.flag_if_supported("-ggdb");
+    }
+    build.compile("tflite_coral");
 
     println!("cargo:rustc-link-lib=coral");
     println!("cargo:rustc-link-lib=edgetpu");

@@ -1,7 +1,6 @@
 use crate::{error::Error, pose, tflite};
 use ndarray::{Axis, CowArray, Ix1, Ix2, Ix3};
 use num_traits::cast::FromPrimitive;
-use std::ops::Deref;
 
 /// Decode poses into a Vec of Pose.
 pub(self) fn reconstruct_from_arrays(
@@ -35,9 +34,7 @@ pub(crate) trait Decoder {
     /// Return the number of expected_output_tensors the decoder expects to operate on.
     fn expected_output_tensors(&self) -> usize;
 
-    fn decode_output<I>(&self, interp: I) -> Result<Box<[pose::Pose]>, Error>
-    where
-        I: Deref<Target = tflite::Interpreter>;
+    fn decode_output(&self, interp: &tflite::Interpreter) -> Result<Box<[pose::Pose]>, Error>;
 
     /// Validate that the model has the expected number of output tensors.
     fn validate_output_tensor_count(&self, output_tensor_count: usize) -> Result<(), Error> {
@@ -74,10 +71,7 @@ impl Decoder for Decode {
         }
     }
 
-    fn decode_output<I>(&self, interp: I) -> Result<Box<[pose::Pose]>, Error>
-    where
-        I: Deref<Target = tflite::Interpreter>,
-    {
+    fn decode_output(&self, interp: &tflite::Interpreter) -> Result<Box<[pose::Pose]>, Error> {
         match self {
             Self::HandRolled(d) => d.decode_output(interp),
         }
