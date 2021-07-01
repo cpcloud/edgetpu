@@ -1,5 +1,0 @@
-clang
-%c -std=c11
-%cpp -std=c++17
-%cpp -pthread
--I/nix/store/s5rjhpr1sfv41jqr13sc3fdxkg0cc716-opencv-4.5.2/include/opencv4
