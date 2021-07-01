@@ -5,6 +5,12 @@ pub(crate) enum Error {
     #[error("failed to get output tensor: got null pointer instead")]
     GetOutputTensor,
 
+    #[error("failed to get output tensor from cxx")]
+    GetOutputTensorFromCxx(#[source] cxx::Exception),
+
+    #[error("failed to get output tensor count from cxx")]
+    GetOutputTensorCount(#[source] cxx::Exception),
+
     #[error("expected {0} output tensors, got {1}")]
     GetExpectedNumOutputs(usize, usize),
 
@@ -111,6 +117,36 @@ pub(crate) enum Error {
 
     #[error("failed to push input tensors")]
     PushInputTensors(#[source] cxx::Exception),
+
+    #[error("failed to pop output tensors")]
+    PopOutputTensors(#[source] cxx::Exception),
+
+    #[error("failed to make model")]
+    MakeModel(#[source] cxx::Exception),
+
+    #[error("failed to make interpreter from model")]
+    MakeInterpreterFromModel(#[source] cxx::Exception),
+
+    #[error("failed to get edgetpu device infos")]
+    GetAllDeviceInfos(#[source] cxx::Exception),
+
+    #[error("failed to make edge tpu context")]
+    MakeEdgeTpuContext(#[source] cxx::Exception),
+
+    #[error("failed to construct input tensor")]
+    MakeInputTensor(#[source] cxx::Exception),
+
+    #[error("failed to get output queue size")]
+    GetQueueSizes(#[source] cxx::Exception),
+
+    #[error("failed to set output queue size")]
+    SetOutputQueueSize(#[source] cxx::Exception),
+
+    #[error("failed set input queue size")]
+    SetInputQueueSize(#[source] cxx::Exception),
+
+    #[error("failed to generate pipelined model runner")]
+    MakePipelinedModelRunner(#[source] cxx::Exception),
 }
 
 /// Check whether a pointer to const T is null.

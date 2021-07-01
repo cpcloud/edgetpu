@@ -47,17 +47,17 @@ pub(crate) mod ffi {
 
         fn make_pipelined_model_runner(
             interpreters: &[SharedPtr<Interpreter>],
-        ) -> SharedPtr<PipelinedModelRunner>;
+        ) -> Result<SharedPtr<PipelinedModelRunner>>;
 
         fn set_pipelined_model_runner_input_queue_size(
             runner: SharedPtr<PipelinedModelRunner>,
             size: usize,
-        );
+        ) -> Result<()>;
 
         fn set_pipelined_model_runner_output_queue_size(
             runner: SharedPtr<PipelinedModelRunner>,
             size: usize,
-        );
+        ) -> Result<()>;
 
         fn push_input_tensors(
             runner: SharedPtr<PipelinedModelRunner>,
@@ -67,16 +67,16 @@ pub(crate) mod ffi {
         fn pop_output_tensors(
             runner: SharedPtr<PipelinedModelRunner>,
             outputs: &mut [UniquePtr<OutputTensor>],
-        ) -> bool;
+        ) -> Result<bool>;
 
         fn make_input_tensor(
             runner: SharedPtr<PipelinedModelRunner>,
             data: &[u8],
-        ) -> SharedPtr<PipelineTensor>;
+        ) -> Result<SharedPtr<PipelineTensor>>;
 
-        fn get_queue_sizes(runner: &PipelinedModelRunner) -> Vec<usize>;
+        fn get_queue_sizes(runner: &PipelinedModelRunner) -> Result<Vec<usize>>;
 
-        fn make_model(model_path: &str) -> UniquePtr<FlatBufferModel>;
+        fn make_model(model_path: &str) -> Result<UniquePtr<FlatBufferModel>>;
 
         fn make_interpreter_from_model(
             model: &FlatBufferModel,
@@ -86,12 +86,15 @@ pub(crate) mod ffi {
         fn make_edge_tpu_context(
             device_type: DeviceType,
             device_path: &str,
-        ) -> SharedPtr<EdgeTpuContext>;
+        ) -> Result<SharedPtr<EdgeTpuContext>>;
 
-        fn get_all_device_infos() -> Vec<DeviceInfo>;
+        fn get_all_device_infos() -> Result<Vec<DeviceInfo>>;
 
-        fn get_output_tensor_count(interpreter: &Interpreter) -> usize;
+        fn get_output_tensor_count(interpreter: &Interpreter) -> Result<usize>;
 
-        fn get_output_tensor(interpreter: &Interpreter, index: usize) -> *const TfLiteTensor;
+        fn get_output_tensor(
+            interpreter: &Interpreter,
+            index: usize,
+        ) -> Result<*const TfLiteTensor>;
     }
 }

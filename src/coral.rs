@@ -27,13 +27,15 @@ impl PipelinedModelRunner {
         if pointers.is_empty() {
             return Err(Error::GetInterpreterPointers);
         }
+
         let output_tensor_count = interpreters
             .last()
             .ok_or(Error::GetOutputInterpreter)?
-            .get_output_tensor_count();
+            .get_output_tensor_count()?;
 
         Ok(Self {
-            runner: ffi::make_pipelined_model_runner(&pointers),
+            runner: ffi::make_pipelined_model_runner(&pointers)
+                .map_err(Error::MakePipelinedModelRunner)?,
             interpreters: interpreters.into_boxed_slice().into(),
             output_tensor_count,
         })
@@ -43,16 +45,18 @@ impl PipelinedModelRunner {
         self.interpreters.last().ok_or(Error::GetOutputInterpreter)
     }
 
-    pub(crate) fn set_input_queue_size(&mut self, size: usize) {
+    pub(crate) fn set_input_queue_size(&mut self, size: usize) -> Result<(), Error> {
         ffi::set_pipelined_model_runner_input_queue_size(self.runner.clone(), size)
+            .map_err(Error::SetInputQueueSize)
     }
 
-    pub(crate) fn set_output_queue_size(&mut self, size: usize) {
+    pub(crate) fn set_output_queue_size(&mut self, size: usize) -> Result<(), Error> {
         ffi::set_pipelined_model_runner_output_queue_size(self.runner.clone(), size)
+            .map_err(Error::SetOutputQueueSize)
     }
 
-    pub(crate) fn queue_sizes(&self) -> Vec<usize> {
-        ffi::get_queue_sizes(&*self.runner)
+    pub(crate) fn queue_sizes(&self) -> Result<Vec<usize>, Error> {
+        ffi::get_queue_sizes(&*self.runner).map_err(Error::GetQueueSizes)
     }
 
     #[instrument(
@@ -71,26 +75,30 @@ impl PipelinedModelRunner {
     }
 
     #[instrument(name = "PipelinedModelRunner::pop", skip(self), level = "debug")]
-    pub(crate) fn pop(&self) -> Option<Vec<UniquePtr<ffi::OutputTensor>>> {
+    pub(crate) fn pop(&self) -> Result<Option<Vec<UniquePtr<ffi::OutputTensor>>>, Error> {
         let mut tensors = std::iter::repeat_with(UniquePtr::null)
             .take(self.output_tensor_count)
             .collect::<Vec<_>>();
-        let succeeded = ffi::pop_output_tensors(self.runner.clone(), &mut tensors);
+        let succeeded = ffi::pop_output_tensors(self.runner.clone(), &mut tensors)
+            .map_err(Error::PopOutputTensors)?;
 
-        if succeeded {
+        Ok(if succeeded {
             debug!(message = "popped", queue_sizes = ?self.queue_sizes());
             Some(tensors)
         } else {
             None
-        }
+        })
     }
 
-    pub(crate) fn drain(&mut self) -> impl Iterator<Vec<UniquePtr<ffi::OutputTensor>>> {
-        std::iter::repeat_with(|| self.pop()).take_while(|x| x.is_some())
+    pub(crate) fn drain(&mut self) -> Result<(), Error> {
+        while self.pop()?.is_some() {}
+        Ok(())
     }
 
-    pub(crate) fn alloc_input_tensor(&self, data: &[u8]) -> PipelineTensor {
-        PipelineTensor::new(ffi::make_input_tensor(self.runner.clone(), data))
+    pub(crate) fn alloc_input_tensor(&self, data: &[u8]) -> Result<PipelineTensor, Error> {
+        Ok(PipelineTensor::new(
+            ffi::make_input_tensor(self.runner.clone(), data).map_err(Error::MakeInputTensor)?,
+        ))
     }
 }
 
@@ -99,7 +107,10 @@ impl Drop for PipelinedModelRunner {
         if let Err(error) = self.push(None) {
             error!(message = "unable to push empty vector", ?error);
         }
-        while self.pop().is_some() {}
+
+        if let Err(error) = self.drain() {
+            error!(message = "failed to drain output queue", ?error);
+        }
     }
 }
 

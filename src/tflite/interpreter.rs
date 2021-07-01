@@ -29,8 +29,9 @@ impl Interpreter {
             .as_os_str()
             .to_str()
             .ok_or_else(|| Error::GetModelPathAsStr(model_path.clone()))?;
-        let model = ffi::make_model(path);
-        let interpreter = ffi::make_interpreter_from_model(&*model, edgetpu_context).unwrap();
+        let model = ffi::make_model(path).map_err(Error::MakeModel)?;
+        let interpreter = ffi::make_interpreter_from_model(&*model, edgetpu_context)
+            .map_err(Error::MakeInterpreterFromModel)?;
 
         Ok(Self {
             interpreter,
@@ -48,19 +49,22 @@ impl Interpreter {
         &self.model_path
     }
 
-    pub(crate) fn get_output_tensor_count(&self) -> usize {
-        ffi::get_output_tensor_count(&*self.interpreter)
+    pub(crate) fn get_output_tensor_count(&self) -> Result<usize, Error> {
+        ffi::get_output_tensor_count(&*self.interpreter).map_err(Error::GetOutputTensorCount)
     }
 
     pub(crate) fn get_output_tensor(&self, index: usize) -> Result<Tensor<'_>, Error> {
         Tensor::new(
-            check_null(ffi::get_output_tensor(&*self.interpreter, index))
-                .ok_or(Error::GetOutputTensor)?,
+            check_null(
+                ffi::get_output_tensor(&*self.interpreter, index)
+                    .map_err(Error::GetOutputTensorFromCxx)?,
+            )
+            .ok_or(Error::GetOutputTensor)?,
         )
     }
 
     pub(crate) fn get_output_tensor_by_name(&self, name: &str) -> Result<Tensor<'_>, Error> {
-        for index in 0..self.get_output_tensor_count() {
+        for index in 0..self.get_output_tensor_count()? {
             let tensor = self.get_output_tensor(index)?;
             if tensor.name()? == name {
                 return Ok(tensor);

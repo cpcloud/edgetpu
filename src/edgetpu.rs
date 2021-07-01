@@ -15,9 +15,12 @@ impl Devices {
     /// Construct a list of edgetpu devices.
     pub(crate) fn new() -> Result<Self, Error> {
         let contexts = ffi::get_all_device_infos()
+            .map_err(Error::GetAllDeviceInfos)?
             .into_iter()
-            .map(|ffi::DeviceInfo { typ, path }| ffi::make_edge_tpu_context(typ, &path))
-            .collect::<Vec<_>>();
+            .map(|ffi::DeviceInfo { typ, path }| {
+                ffi::make_edge_tpu_context(typ, &path).map_err(Error::MakeEdgeTpuContext)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let len = contexts.len();
         Ok(Self {
             contexts: Arc::new(contexts),

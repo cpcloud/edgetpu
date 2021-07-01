@@ -66,11 +66,13 @@ impl<D> Engine<D> {
         interpreters.sort_by_key(|interpreter| interpreter.model_path().to_path_buf());
 
         let mut model_runner = PipelinedModelRunner::new(interpreters)?;
-        model_runner.set_input_queue_size(input_queue_size);
-        model_runner.set_output_queue_size(output_queue_size);
+        model_runner.set_input_queue_size(input_queue_size)?;
+        model_runner.set_output_queue_size(output_queue_size)?;
 
         decoder.validate_output_tensor_count(
-            model_runner.output_interpreter()?.get_output_tensor_count(),
+            model_runner
+                .output_interpreter()?
+                .get_output_tensor_count()?,
         )?;
 
         Ok(Self {
@@ -88,14 +90,14 @@ impl<D> Engine<D> {
         Ok(())
     }
 
-    pub(crate) fn pop(&self) -> Option<Vec<UniquePtr<ffi::OutputTensor>>> {
-        let result = self.model_runner.pop();
+    pub(crate) fn pop(&self) -> Result<Option<Vec<UniquePtr<ffi::OutputTensor>>>, Error> {
+        let result = self.model_runner.pop()?;
         let mut timing = self.timing.lock().unwrap();
         timing.inference += self.start_inference.lock().unwrap().elapsed();
-        result
+        Ok(result)
     }
 
-    pub(crate) fn alloc_input_tensor(&self, input: &[u8]) -> PipelineTensor {
+    pub(crate) fn alloc_input_tensor(&self, input: &[u8]) -> Result<PipelineTensor, Error> {
         self.model_runner.alloc_input_tensor(input)
     }
 

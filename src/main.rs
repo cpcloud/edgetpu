@@ -315,7 +315,7 @@ fn main() -> Result<()> {
                 .context("failed to resize frame")?;
 
                 let image_slice = mat_to_slice(&out_frame)?;
-                let inputs = Arc::new(vec![engine_push.alloc_input_tensor(image_slice)]);
+                let inputs = Arc::new(vec![engine_push.alloc_input_tensor(image_slice)?]);
 
                 let image_vec = image_slice.to_vec();
                 engine_push.push(Some(inputs.clone()))?;
