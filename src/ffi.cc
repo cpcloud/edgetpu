@@ -83,10 +83,11 @@ std::unique_ptr<tflite::FlatBufferModel> make_model(rust::Str model_path) {
 
 std::shared_ptr<tflite::Interpreter> make_interpreter_from_model(
     const tflite::FlatBufferModel &model,
-    std::shared_ptr<edgetpu::EdgeTpuContext> edgetpu_context) {
+    std::shared_ptr<edgetpu::EdgeTpuContext> edgetpu_context,
+    size_t num_threads) {
   auto interpreter =
       coral::MakeEdgeTpuInterpreterOrDie(model, edgetpu_context.get());
-  interpreter->SetNumThreads(1);
+  interpreter->SetNumThreads(num_threads);
   if (interpreter->AllocateTensors() != kTfLiteOk) {
     throw std::logic_error("failed to allocate tensors");
   }
@@ -159,4 +160,9 @@ std::size_t get_output_tensor_count(const tflite::Interpreter &interpreter) {
 const TfLiteTensor *get_output_tensor(const tflite::Interpreter &interpreter,
                                       size_t index) {
   return interpreter.output_tensor(index);
+}
+
+const TfLiteTensor *get_input_tensor(const tflite::Interpreter &interpreter,
+                                     size_t index) {
+  return interpreter.input_tensor(index);
 }

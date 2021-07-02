@@ -17,12 +17,12 @@ pub(crate) struct Interpreter {
 
 impl Interpreter {
     #[instrument(name = "Interpreter::new", skip(path, devices))]
-    pub(crate) fn new<P>(path: P, devices: Devices) -> Result<Self, Error>
+    pub(crate) fn new<P>(path: P, devices: Devices, num_threads: usize) -> Result<Self, Error>
     where
         P: AsRef<Path>,
     {
         info!(path = %path.as_ref().display());
-        let edgetpu_context = devices.allocate_one()?;
+        let edgetpu_context = devices.allocate_one().unwrap_or_else(SharedPtr::null);
 
         let model_path = path.as_ref().to_path_buf();
         let path = model_path
@@ -30,7 +30,7 @@ impl Interpreter {
             .to_str()
             .ok_or_else(|| Error::GetModelPathAsStr(model_path.clone()))?;
         let model = ffi::make_model(path).map_err(Error::MakeModel)?;
-        let interpreter = ffi::make_interpreter_from_model(&*model, edgetpu_context)
+        let interpreter = ffi::make_interpreter_from_model(&*model, edgetpu_context, num_threads)
             .map_err(Error::MakeInterpreterFromModel)?;
 
         Ok(Self {
@@ -51,6 +51,16 @@ impl Interpreter {
 
     pub(crate) fn get_output_tensor_count(&self) -> Result<usize, Error> {
         ffi::get_output_tensor_count(&*self.interpreter).map_err(Error::GetOutputTensorCount)
+    }
+
+    pub(crate) fn get_input_tensor(&self, index: usize) -> Result<Tensor<'_>, Error> {
+        Tensor::new(
+            check_null(
+                ffi::get_input_tensor(&*self.interpreter, index)
+                    .map_err(Error::GetOutputTensorFromCxx)?,
+            )
+            .ok_or(Error::GetOutputTensor)?,
+        )
     }
 
     pub(crate) fn get_output_tensor(&self, index: usize) -> Result<Tensor<'_>, Error> {

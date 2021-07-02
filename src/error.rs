@@ -29,9 +29,6 @@ pub(crate) enum Error {
     #[error("failed to convert keypoint variant to usize: {0:?}")]
     KeypointVariantToUSize(crate::pose::KeypointKind),
 
-    #[error("failed to find unallocated edgetpu device")]
-    FindEdgeTpuDevice,
-
     #[error("failed to get Mat data")]
     GetMatData(#[source] opencv::Error),
 

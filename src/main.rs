@@ -169,14 +169,6 @@ struct Opt {
     #[structopt(short, long, default_value = "0")]
     device: i32,
 
-    /// The width of the image the model expects.
-    #[structopt(short, long, default_value = "641")]
-    width: u16,
-
-    /// The height of the image the model expects.
-    #[structopt(short = "-H", long, default_value = "481")]
-    height: u16,
-
     /// Pose keypoint score threshold.
     #[structopt(short, long, default_value = "0.2")]
     threshold: f32,
@@ -189,23 +181,29 @@ struct Opt {
     #[structopt(long)]
     frame_height: Option<u16>,
 
-    #[structopt(short = "-W", long, default_value = "1")]
-    wait_key_ms: i32,
-
-    #[structopt(short, long, default_value = "info", env = "RUST_LOG")]
-    log_level: tracing_subscriber::filter::EnvFilter,
-
+    /// Size of the input queue.
     #[structopt(short, long, default_value = "1000")]
     input_queue_size: usize,
 
+    /// Size of the output queue.
     #[structopt(short, long, default_value = "1000")]
     output_queue_size: usize,
 
-    #[structopt(subcommand)]
-    decoder: decode::Decode,
+    /// Number of threads per tflite::Interpreter.
+    #[structopt(short = "-n", long, default_value = "1")]
+    threads_per_interpreter: usize,
 
+    /// Log level.
+    #[structopt(short, long, default_value = "info", env = "RUST_LOG")]
+    log_level: tracing_subscriber::filter::EnvFilter,
+
+    /// Whether to show a progress bar.
     #[structopt(short, long)]
     show_progress: bool,
+
+    /// How long to wait for checking for key presses.
+    #[structopt(short = "-W", long, default_value = "1")]
+    wait_key_ms: i32,
 }
 
 fn main() -> Result<()> {
@@ -244,13 +242,6 @@ fn main() -> Result<()> {
     )?
     .to_mat()
     .context("failed converting input frame MatExpr to Mat")?;
-    let mut out_frame = Mat::zeros(opt.height.into(), opt.width.into(), CV_8UC3)
-        .context("failed to construct MatExpr of zeros")?
-        .to_mat()
-        .context("failed convertin output frame MatExpr to Mat")?;
-    let out_frame_size = out_frame
-        .size()
-        .context("failed getting output frame dimensions")?;
 
     let running = Arc::new(AtomicBool::new(true));
     let running_ctrl_c = running.clone();
@@ -263,12 +254,22 @@ fn main() -> Result<()> {
     let engine = Arc::new(
         engine::Engine::new(
             &opt.models,
-            opt.decoder,
+            crate::decode::hand_rolled::Decoder::default(),
             opt.input_queue_size,
             opt.output_queue_size,
+            opt.threads_per_interpreter,
         )
         .context("failed constructing engine")?,
     );
+
+    let (height, width) = engine.get_input_dimensions()?;
+    let mut out_frame = Mat::zeros(height.to_i32().unwrap(), width.to_i32().unwrap(), CV_8UC3)
+        .context("failed to construct MatExpr of zeros")?
+        .to_mat()
+        .context("failed convertin output frame MatExpr to Mat")?;
+    let out_frame_size = out_frame
+        .size()
+        .context("failed getting output frame dimensions")?;
 
     let frame_duration = Arc::new(Mutex::new(Duration::default()));
     let frame_duration_push = frame_duration.clone();

@@ -45,6 +45,15 @@ impl PipelinedModelRunner {
         self.interpreters.last().ok_or(Error::GetOutputInterpreter)
     }
 
+    fn input_interpreter(&self) -> &Interpreter {
+        &self.interpreters[0]
+    }
+
+    pub(crate) fn get_input_dimensions(&self) -> Result<(usize, usize), Error> {
+        let tensor = self.input_interpreter().get_input_tensor(0)?;
+        Ok((tensor.dim(1)?, tensor.dim(2)?))
+    }
+
     pub(crate) fn set_input_queue_size(&mut self, size: usize) -> Result<(), Error> {
         ffi::set_pipelined_model_runner_input_queue_size(self.runner.clone(), size)
             .map_err(Error::SetInputQueueSize)

@@ -50,30 +50,4 @@ pub(crate) trait Decoder {
     }
 }
 
-mod hand_rolled;
-
-#[derive(Debug, structopt::StructOpt)]
-pub(crate) enum Decode {
-    /// Decode using a hand rolled decoder
-    HandRolled(hand_rolled::Decoder),
-}
-
-impl Default for Decode {
-    fn default() -> Self {
-        Self::HandRolled(Default::default())
-    }
-}
-
-impl Decoder for Decode {
-    fn expected_output_tensors(&self) -> usize {
-        match self {
-            Self::HandRolled(d) => d.expected_output_tensors(),
-        }
-    }
-
-    fn decode_output(&self, interp: &tflite::Interpreter) -> Result<Box<[pose::Pose]>, Error> {
-        match self {
-            Self::HandRolled(d) => d.decode_output(interp),
-        }
-    }
-}
+pub(crate) mod hand_rolled;

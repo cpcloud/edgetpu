@@ -81,6 +81,7 @@ pub(crate) mod ffi {
         fn make_interpreter_from_model(
             model: &FlatBufferModel,
             edgetpu_context: SharedPtr<EdgeTpuContext>,
+            num_threads: usize,
         ) -> Result<SharedPtr<Interpreter>>;
 
         fn make_edge_tpu_context(
@@ -96,5 +97,8 @@ pub(crate) mod ffi {
             interpreter: &Interpreter,
             index: usize,
         ) -> Result<*const TfLiteTensor>;
+
+        fn get_input_tensor(interpreter: &Interpreter, index: usize)
+            -> Result<*const TfLiteTensor>;
     }
 }

@@ -41,6 +41,7 @@ impl<D> Engine<D> {
         decoder: D,
         input_queue_size: usize,
         output_queue_size: usize,
+        threads_per_interpreter: usize,
     ) -> Result<Self, Error>
     where
         P: AsRef<Path>,
@@ -60,6 +61,7 @@ impl<D> Engine<D> {
                         Error::CanonicalizePath(e, model_path.as_ref().to_path_buf())
                     })?,
                     devices.clone(),
+                    threads_per_interpreter,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -82,6 +84,10 @@ impl<D> Engine<D> {
             frame_num: Default::default(),
             start_inference: Mutex::new(Instant::now()),
         })
+    }
+
+    pub(crate) fn get_input_dimensions(&self) -> Result<(usize, usize), Error> {
+        self.model_runner.get_input_dimensions()
     }
 
     pub(crate) fn push(&self, input_tensor: Option<Arc<Vec<PipelineTensor>>>) -> Result<(), Error> {

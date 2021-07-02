@@ -30,7 +30,7 @@ impl Devices {
 
     /// Allocate a single TPU device from the pool of devices.
     #[instrument(name = "Devices::allocate_one", skip(self))]
-    pub(crate) fn allocate_one(&self) -> Result<SharedPtr<ffi::EdgeTpuContext>, Error> {
+    pub(crate) fn allocate_one(&self) -> Option<SharedPtr<ffi::EdgeTpuContext>> {
         self.contexts
             .iter()
             .cloned()
@@ -44,6 +44,5 @@ impl Devices {
                     None
                 }
             })
-            .ok_or(Error::FindEdgeTpuDevice)
     }
 }
