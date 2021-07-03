@@ -42,9 +42,9 @@ get_queue_sizes(const coral::PipelinedModelRunner &runner) {
   rust::Vec<std::size_t> results;
   results.reserve(queue_sizes.size());
 
-  for (const auto &size : queue_sizes) {
-    results.push_back(size);
-  }
+  std::copy(queue_sizes.cbegin(), queue_sizes.cend(),
+            std::back_inserter(results));
+
   return results;
 }
 
@@ -52,20 +52,19 @@ std::shared_ptr<coral::PipelinedModelRunner> make_pipelined_model_runner(
     rust::Slice<const std::shared_ptr<tflite::Interpreter>> interpreters) {
   std::vector<tflite::Interpreter *> interps;
   interps.reserve(interpreters.size());
-  for (auto &interp : interpreters) {
-    interps.push_back(interp.get());
-  }
-  return std::make_shared<coral::PipelinedModelRunner>(interps, nullptr,
-                                                       nullptr);
+  std::transform(interpreters.begin(), interpreters.end(),
+                 std::back_inserter(interps),
+                 [](auto interp) { return interp.get(); });
+  return std::make_shared<coral::PipelinedModelRunner>(interps);
 }
 
 void set_pipelined_model_runner_input_queue_size(
-    std::shared_ptr<coral::PipelinedModelRunner> runner, size_t size) {
+    std::shared_ptr<coral::PipelinedModelRunner> runner, std::size_t size) {
   runner->SetInputQueueSize(size);
 }
 
 void set_pipelined_model_runner_output_queue_size(
-    std::shared_ptr<coral::PipelinedModelRunner> runner, size_t size) {
+    std::shared_ptr<coral::PipelinedModelRunner> runner, std::size_t size) {
   runner->SetOutputQueueSize(size);
 }
 
@@ -84,7 +83,7 @@ std::unique_ptr<tflite::FlatBufferModel> make_model(rust::Str model_path) {
 std::shared_ptr<tflite::Interpreter> make_interpreter_from_model(
     const tflite::FlatBufferModel &model,
     std::shared_ptr<edgetpu::EdgeTpuContext> edgetpu_context,
-    size_t num_threads) {
+    std::size_t num_threads) {
   auto interpreter =
       coral::MakeEdgeTpuInterpreterOrDie(model, edgetpu_context.get());
   interpreter->SetNumThreads(num_threads);
@@ -99,6 +98,7 @@ namespace internal {
 OutputTensor::OutputTensor(std::unique_ptr<coral::PipelineTensor> tensor,
                            std::shared_ptr<coral::PipelinedModelRunner> runner)
     : tensor_(std::move(tensor)), runner_(runner) {}
+
 OutputTensor::~OutputTensor() {
   runner_->GetOutputTensorAllocator()->Free(tensor_->buffer);
 }
@@ -122,9 +122,10 @@ bool push_input_tensors(
     rust::Slice<std::shared_ptr<coral::PipelineTensor>> inputs) {
   std::vector<coral::PipelineTensor> cpp_inputs;
   cpp_inputs.reserve(inputs.size());
-  for (size_t i = 0; i < inputs.size(); ++i) {
-    cpp_inputs.push_back(*inputs[i]);
-  }
+
+  std::transform(inputs.begin(), inputs.end(), std::back_inserter(cpp_inputs),
+                 [](auto input) { return *input; });
+
   return runner->Push(cpp_inputs);
 }
 
@@ -134,22 +135,28 @@ bool pop_output_tensors(
   std::vector<coral::PipelineTensor> raw_outputs;
   auto result = runner->Pop(&raw_outputs);
 
-  for (size_t i = 0; i < raw_outputs.size(); ++i) {
-    outputs[i] = std::make_unique<internal::OutputTensor>(
-        std::make_unique<coral::PipelineTensor>(raw_outputs[i]), runner);
-  }
-
+  std::transform(raw_outputs.cbegin(), raw_outputs.cend(), outputs.begin(),
+                 [runner](auto raw_output) {
+                   return std::make_unique<internal::OutputTensor>(
+                       std::make_unique<coral::PipelineTensor>(raw_output),
+                       runner);
+                 });
   return result;
 }
 
 rust::Vec<DeviceInfo> get_all_device_infos() {
+  auto enumerations =
+      edgetpu::EdgeTpuManager::GetSingleton()->EnumerateEdgeTpu();
+
   rust::Vec<DeviceInfo> device_infos;
-  for (auto record :
-       edgetpu::EdgeTpuManager::GetSingleton()->EnumerateEdgeTpu()) {
-    device_infos.push_back(
-        DeviceInfo{edgetpu_device_type_to_device_type(record.type),
-                   rust::String(record.path)});
-  }
+  device_infos.reserve(enumerations.size());
+
+  std::transform(enumerations.cbegin(), enumerations.cend(),
+                 std::back_inserter(device_infos), [](auto record) {
+                   return DeviceInfo{
+                       edgetpu_device_type_to_device_type(record.type),
+                       rust::String(record.path)};
+                 });
   return device_infos;
 }
 
@@ -158,11 +165,11 @@ std::size_t get_output_tensor_count(const tflite::Interpreter &interpreter) {
 }
 
 const TfLiteTensor *get_output_tensor(const tflite::Interpreter &interpreter,
-                                      size_t index) {
+                                      std::size_t index) {
   return interpreter.output_tensor(index);
 }
 
 const TfLiteTensor *get_input_tensor(const tflite::Interpreter &interpreter,
-                                     size_t index) {
+                                     std::size_t index) {
   return interpreter.input_tensor(index);
 }

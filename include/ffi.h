@@ -48,9 +48,9 @@ std::shared_ptr<coral::PipelinedModelRunner> make_pipelined_model_runner(
     rust::Slice<const std::shared_ptr<tflite::Interpreter>> interpreters);
 
 void set_pipelined_model_runner_input_queue_size(
-    std::shared_ptr<coral::PipelinedModelRunner> runner, size_t size);
+    std::shared_ptr<coral::PipelinedModelRunner> runner, std::size_t size);
 void set_pipelined_model_runner_output_queue_size(
-    std::shared_ptr<coral::PipelinedModelRunner> runner, size_t size);
+    std::shared_ptr<coral::PipelinedModelRunner> runner, std::size_t size);
 
 rust::Vec<std::size_t>
 get_queue_sizes(const coral::PipelinedModelRunner &runner);
@@ -63,7 +63,7 @@ std::unique_ptr<tflite::FlatBufferModel> make_model(rust::Str model_path);
 std::shared_ptr<tflite::Interpreter> make_interpreter_from_model(
     const tflite::FlatBufferModel &model,
     std::shared_ptr<edgetpu::EdgeTpuContext> edgetpu_context,
-    size_t num_threads);
+    std::size_t num_threads);
 
 std::shared_ptr<coral::PipelineTensor>
 make_input_tensor(std::shared_ptr<coral::PipelinedModelRunner> runner,
@@ -81,6 +81,6 @@ rust::Vec<DeviceInfo> get_all_device_infos();
 
 std::size_t get_output_tensor_count(const tflite::Interpreter &interpreter);
 const TfLiteTensor *get_output_tensor(const tflite::Interpreter &interpreter,
-                                      size_t index);
+                                      std::size_t index);
 const TfLiteTensor *get_input_tensor(const tflite::Interpreter &interpreter,
-                                     size_t index);
+                                     std::size_t index);
