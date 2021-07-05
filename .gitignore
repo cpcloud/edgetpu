@@ -36,3 +36,4 @@ Cargo.lock
 .ccls-cache
 .direnv/
 test_models
+.gdb_history
