@@ -80,6 +80,7 @@ impl PipelinedModelRunner {
                 .map(PipelineTensor::as_inner)
                 .collect::<Vec<_>>()
         });
+
         ffi::push_input_tensors(self.runner.clone(), &mut ptrs).map_err(Error::PushInputTensors)
     }
 
@@ -92,15 +93,24 @@ impl PipelinedModelRunner {
             .map_err(Error::PopOutputTensors)?;
 
         Ok(if succeeded {
-            debug!(message = "popped", queue_sizes = ?self.queue_sizes());
+            debug!(message = "popped", queue_sizes = ?self.queue_sizes()?);
             Some(tensors)
         } else {
             None
         })
     }
 
-    pub(crate) fn drain(&mut self) -> Result<(), Error> {
+    #[instrument(name = "PipelinedModelRunner::drain", skip(self), level = "debug")]
+    fn drain(&mut self) -> Result<(), Error> {
+        debug!(message = "draining");
+        while self.input_queue_size()? > 0 {
+            self.pop()?;
+        }
+        self.push(None)?;
+        debug!(message = "pushed");
         while self.pop()?.is_some() {}
+        debug!(message = "drained");
+        assert_eq!(self.output_queue_size()?, 0);
         Ok(())
     }
 
@@ -109,16 +119,23 @@ impl PipelinedModelRunner {
             ffi::make_input_tensor(self.runner.clone(), data).map_err(Error::MakeInputTensor)?,
         ))
     }
+
+    fn input_queue_size(&self) -> Result<usize, Error> {
+        ffi::get_input_queue_size(&*self.runner).map_err(Error::GetInputQueueSize)
+    }
+
+    fn output_queue_size(&self) -> Result<usize, Error> {
+        ffi::get_output_queue_size(&*self.runner).map_err(Error::GetOutputQueueSize)
+    }
 }
 
 impl Drop for PipelinedModelRunner {
+    #[instrument(name = "PipelinedModelRunner::drop", skip(self), level = "debug")]
     fn drop(&mut self) {
-        if let Err(error) = self.push(None) {
-            error!(message = "unable to push empty vector", ?error);
-        }
-
         if let Err(error) = self.drain() {
             error!(message = "failed to drain output queue", ?error);
+        } else {
+            debug!(message = "fully drained");
         }
     }
 }

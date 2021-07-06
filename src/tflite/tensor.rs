@@ -4,6 +4,7 @@ use crate::{
 };
 use num_traits::ToPrimitive;
 use std::{convert::TryFrom, ffi::CStr, marker::PhantomData};
+use tracing::instrument;
 
 fn dim(tensor: *const tflite_sys::TfLiteTensor, index: usize) -> Result<usize, Error> {
     let dims = num_dims(check_null(tensor).ok_or(Error::GetTensorForDim)?)?;
@@ -58,6 +59,7 @@ impl<'interp> Tensor<'interp> {
     }
 
     /// Mutable view of a tensor's data as a slice of `T` values.
+    #[instrument(name = "Tensor::as_u8_slice", skip(self), level = "debug")]
     fn as_u8_slice(&'interp self) -> Result<&'interp [u8], Error> {
         let typ = self.r#type();
         if typ != tflite_sys::TfLiteType::kTfLiteUInt8 {

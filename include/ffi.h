@@ -44,6 +44,8 @@ struct SegStats;
 struct DeviceInfo;
 enum class DeviceType : std::uint8_t;
 
+void init_glog(rust::Str program_name);
+
 std::shared_ptr<coral::PipelinedModelRunner> make_pipelined_model_runner(
     rust::Slice<const std::shared_ptr<tflite::Interpreter>> interpreters);
 
@@ -54,6 +56,9 @@ void set_pipelined_model_runner_output_queue_size(
 
 rust::Vec<std::size_t>
 get_queue_sizes(const coral::PipelinedModelRunner &runner);
+
+std::size_t get_input_queue_size(const coral::PipelinedModelRunner &runner);
+std::size_t get_output_queue_size(const coral::PipelinedModelRunner &runner);
 
 std::shared_ptr<edgetpu::EdgeTpuContext>
 make_edge_tpu_context(DeviceType device_type, rust::Str device_path);
@@ -80,6 +85,7 @@ bool pop_output_tensors(
 rust::Vec<DeviceInfo> get_all_device_infos();
 
 std::size_t get_output_tensor_count(const tflite::Interpreter &interpreter);
+
 const TfLiteTensor *get_output_tensor(const tflite::Interpreter &interpreter,
                                       std::size_t index);
 const TfLiteTensor *get_input_tensor(const tflite::Interpreter &interpreter,

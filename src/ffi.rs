@@ -1,4 +1,5 @@
 #![allow(unreachable_pub)]
+
 #[cxx::bridge]
 pub(crate) mod ffi {
     struct SegStats {
@@ -18,16 +19,21 @@ pub(crate) mod ffi {
         path: String,
     }
 
+    extern "Rust" {
+        fn rust_log_error(msg: &CxxString);
+    }
+
     unsafe extern "C++" {
-        include!("coral/pipeline/pipelined_model_runner.h");
-        include!("coral/pipeline/common.h");
         include!("tensorflow/lite/interpreter.h");
         include!("tensorflow/lite/model.h");
         include!("tflite/public/edgetpu.h");
+        include!("coral/pipeline/pipelined_model_runner.h");
+        include!("coral/pipeline/common.h");
         include!("tflite-pose/include/ffi.h");
 
         #[namespace = "tflite"]
         type Interpreter;
+
         #[namespace = "tflite"]
         type FlatBufferModel;
 
@@ -76,6 +82,9 @@ pub(crate) mod ffi {
 
         fn get_queue_sizes(runner: &PipelinedModelRunner) -> Result<Vec<usize>>;
 
+        fn get_input_queue_size(runner: &PipelinedModelRunner) -> Result<usize>;
+        fn get_output_queue_size(runner: &PipelinedModelRunner) -> Result<usize>;
+
         fn make_model(model_path: &str) -> Result<UniquePtr<FlatBufferModel>>;
 
         fn make_interpreter_from_model(
@@ -100,5 +109,11 @@ pub(crate) mod ffi {
 
         fn get_input_tensor(interpreter: &Interpreter, index: usize)
             -> Result<*const TfLiteTensor>;
+
+        fn init_glog(program_name: &str) -> Result<()>;
     }
+}
+
+fn rust_log_error(msg: &cxx::CxxString) {
+    tracing::error!(message = msg.to_string_lossy().as_ref());
 }

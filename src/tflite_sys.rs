@@ -6,11 +6,9 @@
 #![allow(deref_nullptr)]
 #![allow(unreachable_pub)]
 
-use cxx::{type_id, ExternType};
-
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-unsafe impl ExternType for TfLiteTensor {
-    type Id = type_id!("TfLiteTensor");
+unsafe impl cxx::ExternType for TfLiteTensor {
+    type Id = cxx::type_id!("TfLiteTensor");
     type Kind = cxx::kind::Opaque;
 }

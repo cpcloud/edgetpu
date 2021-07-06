@@ -2,42 +2,40 @@ let
   buildType = "debug";
   pkgs = import ./nix { inherit buildType; };
   inherit (pkgs) lib;
-  sources = import ./nix/sources.nix;
-  pythonEnv = pkgs.python3.withPackages (p: with p; [
-    click
-    ipdb
-    ipython
-    black
-    mypy
-    ujson
-    opencv4
-  ]);
+  pythonEnv = pkgs.python3.withPackages (
+    p: with p; [
+      click
+      ipdb
+      ipython
+      black
+      mypy
+      ujson
+      opencv4
+    ]
+  );
 in
 pkgs.mkShell {
   name = "edgetpu";
   buildInputs = (with pkgs; [
-    niv
     abseil-cpp
-    cargo-edit
-    cargo-udeps
     cargo-bloat
+    cargo-edit
     clang_10
-    cmake
     flatbuffers
     glog
     libcoral
     libedgetpu
     libv4l
-    meson
+    niv
     opencv4
     pkg-config
+    pythonEnv
     rustToolchain
     tensorflow-lite
-    v4l-utils
-    pythonEnv
-  ]) ++ lib.optionals pkgs.stdenv.isx86_64 [ pkgs.edgetpu-compiler ];
+  ]) ++ lib.optionals pkgs.stdenv.isx86_64 [ pkgs.edgetpu-compiler ]
+  ++ lib.optionals pkgs.stdenv.isAarch64 [ pkgs.v4l-utils ];
 
-  NIX_CFLAGS_COMPILE = lib.optionalString (buildType == "debug") "-ggdb";
+  NIX_CFLAGS_COMPILE = lib.optionalString (buildType == "debug") "-ggdb -Og";
   LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
   CLANG_PATH = "${pkgs.clang_10}/bin/clang";
 }

@@ -144,6 +144,39 @@ pub(crate) enum Error {
 
     #[error("failed to generate pipelined model runner")]
     MakePipelinedModelRunner(#[source] cxx::Exception),
+
+    #[error("failed to get program name from arguments")]
+    GetProgramName,
+
+    #[error("failed to get input queue size")]
+    GetInputQueueSize(#[source] cxx::Exception),
+
+    #[error("failed to get output queue size")]
+    GetOutputQueueSize(#[source] cxx::Exception),
+
+    #[error("failed to initialize google logging")]
+    InitGoogleLogging(#[source] cxx::Exception),
+
+    #[error("failed to initialize global tracing subscriber")]
+    InitTracing(#[source] tracing::subscriber::SetGlobalDefaultError),
+
+    #[error("failed to initialize opencv video capture")]
+    InitOpenCvVideoCapture(#[source] opencv::Error),
+
+    #[error("failed to set video capture frame width")]
+    SetCaptureFrameWidth(#[source] opencv::Error),
+
+    #[error("failed to set video capture frame height")]
+    SetCaptureFrameHeight(#[source] opencv::Error),
+
+    #[error("failed to get video capture frame width")]
+    GetCaptureFrameWidth(#[source] opencv::Error),
+
+    #[error("failed to get video capture frame height")]
+    GetCaptureFrameHeight(#[source] opencv::Error),
+
+    #[error("failed to convert MatExpr to Mat")]
+    ConvertMatExprToMat(#[source] opencv::Error),
 }
 
 /// Check whether a pointer to const T is null.

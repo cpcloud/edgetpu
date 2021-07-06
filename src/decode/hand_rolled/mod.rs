@@ -87,6 +87,7 @@ impl Decoder {
 
         let mut queue = KeypointPriorityQueue::new();
 
+        assert!(!scores.is_empty());
         queue.build_keypoint::<NUM_KEYPOINTS>(
             scores,
             short_offsets,
@@ -543,6 +544,7 @@ impl crate::decode::Decoder for Decoder {
         let frame_height = heatmap_tensor.dim(1)?;
         let frame_width = heatmap_tensor.dim(2)?;
         let heatmaps = heatmap_tensor.dequantized_with_scale(1.0)?;
+        assert!(!heatmaps.is_empty());
         let shorts = interp
             .get_output_tensor_by_name("float_short_offsets")?
             .dequantized_with_scale(recip_output_stride)?;

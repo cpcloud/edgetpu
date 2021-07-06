@@ -1,4 +1,4 @@
-#![feature(variant_count)]
+#![feature(variant_count, type_name_of_val)]
 
 use anyhow::{anyhow, Context, Result};
 use error::Error;
@@ -14,14 +14,14 @@ use std::{
     convert::TryFrom,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc::channel,
-        Arc, Mutex,
+        Arc, RwLock,
     },
     time::{Duration, Instant},
 };
 use structopt::StructOpt;
-use tracing::{info, trace};
+use tracing::{debug, info, trace, warn};
 use tracing_subscriber::layer::SubscriberExt;
 
 mod coral;
@@ -44,10 +44,10 @@ fn draw_poses(
     #[cfg(feature = "gui")] out_frame: &mut Mat,
     #[cfg(not(feature = "gui"))] _out_frame: &mut Mat,
     frame_duration: Duration,
-    nframes: usize,
+    frame_num: usize,
     pb_model_cam_fps: Option<&indicatif::ProgressBar>,
 ) -> Result<(), Error> {
-    let nframes = nframes.to_f64().ok_or(Error::ConvertToF64)?;
+    let nframes = frame_num.to_f64().ok_or(Error::ConvertToF64)?;
     let fps_text = format!(
         "FPS => model: {:.1}, cam: {:.1}",
         nframes / timing.inference.as_secs_f64(),
@@ -63,7 +63,7 @@ fn draw_poses(
 
         const GREEN: (f64, f64, f64) = (0.0, 255.0, 0.0);
         const YELLOW: (f64, f64, f64) = (0.0, 255.0, 255.0);
-        const WHITE: (f64, f64, f64) = (255.0, 255.0, 255.0);
+        const RED: (f64, f64, f64) = (0.0, 0.0, 255.0);
 
         for pose in poses {
             let mut xys = [None; pose::NUM_KEYPOINTS];
@@ -119,7 +119,7 @@ fn draw_poses(
             opencv::core::Point2i::new(0, 15),
             FONT_HERSHEY_SIMPLEX,
             0.5,
-            Scalar::from(WHITE),
+            Scalar::from(RED),
             1,       // thickness
             LINE_AA, // line_type
             false,   // bottom_left_origin
@@ -207,6 +207,9 @@ struct Opt {
 }
 
 fn main() -> Result<()> {
+    let program_name = std::env::args().next().ok_or(Error::GetProgramName)?;
+    crate::ffi::ffi::init_glog(&program_name).map_err(Error::InitGoogleLogging)?;
+
     let opt = Opt::from_args();
     let threshold = opt.threshold;
 
@@ -214,20 +217,30 @@ fn main() -> Result<()> {
         tracing_subscriber::registry()
             .with(tracing_subscriber::fmt::layer())
             .with(opt.log_level),
-    )?;
+    )
+    .map_err(Error::InitTracing)?;
 
-    let mut capture = VideoCapture::new(opt.device, CAP_V4L2)?;
+    let mut capture =
+        VideoCapture::new(opt.device, CAP_V4L2).map_err(Error::InitOpenCvVideoCapture)?;
 
     if let Some(width) = opt.frame_width.map(f64::from) {
-        capture.set(CAP_PROP_FRAME_WIDTH, width)?;
+        capture
+            .set(CAP_PROP_FRAME_WIDTH, width)
+            .map_err(Error::SetCaptureFrameWidth)?;
     }
 
     if let Some(height) = opt.frame_height.map(f64::from) {
-        capture.set(CAP_PROP_FRAME_HEIGHT, height)?;
+        capture
+            .set(CAP_PROP_FRAME_HEIGHT, height)
+            .map_err(Error::SetCaptureFrameHeight)?;
     }
 
-    let width = capture.get(CAP_PROP_FRAME_WIDTH)?;
-    let height = capture.get(CAP_PROP_FRAME_HEIGHT)?;
+    let width = capture
+        .get(CAP_PROP_FRAME_WIDTH)
+        .map_err(Error::GetCaptureFrameWidth)?;
+    let height = capture
+        .get(CAP_PROP_FRAME_HEIGHT)
+        .map_err(Error::GetCaptureFrameHeight)?;
 
     info!(
         message = "got dimensions from video capture",
@@ -241,15 +254,7 @@ fn main() -> Result<()> {
         CV_8UC3,
     )?
     .to_mat()
-    .context("failed converting input frame MatExpr to Mat")?;
-
-    let running = Arc::new(AtomicBool::new(true));
-    let running_ctrl_c = running.clone();
-
-    ctrlc::set_handler(move || {
-        running_ctrl_c.store(false, Ordering::SeqCst);
-    })
-    .context("failed setting Ctrl-C handler")?;
+    .map_err(Error::ConvertMatExprToMat)?;
 
     let engine = Arc::new(
         engine::Engine::new(
@@ -258,9 +263,16 @@ fn main() -> Result<()> {
             opt.input_queue_size,
             opt.output_queue_size,
             opt.threads_per_interpreter,
-        )
-        .context("failed constructing engine")?,
+        )?,
     );
+
+    let running = Arc::new(AtomicBool::new(true));
+    let running_ctrl_c = running.clone();
+
+    ctrlc::set_handler(move || {
+        running_ctrl_c.store(false, Ordering::SeqCst);
+    })
+    .context("failed setting Ctrl-C handler")?;
 
     let (height, width) = engine.get_input_dimensions()?;
     let mut out_frame = Mat::zeros(height.to_i32().unwrap(), width.to_i32().unwrap(), CV_8UC3)
@@ -271,7 +283,8 @@ fn main() -> Result<()> {
         .size()
         .context("failed getting output frame dimensions")?;
 
-    let frame_duration = Arc::new(Mutex::new(Duration::default()));
+    let frame_duration = Arc::new(RwLock::new(Duration::default()));
+    let frame_num = Arc::new(AtomicUsize::new(0));
     let frame_duration_push = frame_duration.clone();
 
     let pb_model_cam_fps = if opt.show_progress {
@@ -293,7 +306,7 @@ fn main() -> Result<()> {
     let running_push = running.clone();
     let engine_push = engine.clone();
 
-    crossbeam::thread::scope(|scope| {
+    crossbeam::thread::scope(move |scope| {
         scope.spawn(move |_| {
             while running_push.load(Ordering::SeqCst) {
                 let frame_start = Instant::now();
@@ -303,7 +316,7 @@ fn main() -> Result<()> {
                 {
                     return Err(anyhow!("reading frame returned false"));
                 }
-                *frame_duration_push.lock().unwrap() += frame_start.elapsed();
+                *frame_duration_push.write().unwrap() += frame_start.elapsed();
 
                 resize(
                     &in_frame,
@@ -318,11 +331,11 @@ fn main() -> Result<()> {
                 let image_slice = mat_to_slice(&out_frame)?;
                 let inputs = Arc::new(vec![engine_push.alloc_input_tensor(image_slice)?]);
 
-                let image_vec = image_slice.to_vec();
                 engine_push.push(Some(inputs.clone()))?;
-                input_frames_tx.send((inputs, image_vec))?;
+                input_frames_tx.send((inputs, image_slice.to_vec()))?;
             }
 
+            debug!(message = "exiting push thread");
             Ok(())
         });
 
@@ -332,13 +345,22 @@ fn main() -> Result<()> {
                 let (_input_tensors, image_bytes) = input_frames_rx.recv()?;
                 let _output_tensors = engine.pop().context("failed to pop")?;
                 let poses = engine.decode_poses().context("failed detecting poses")?;
-                poses_tx.send((poses, engine.timing(), engine.frame_num(), image_bytes))?;
+                if poses_tx
+                    .send((poses, engine.timing(), image_bytes))
+                    .is_err()
+                {
+                    warn!(message = "failed to send data on channel");
+                    running_pop.store(false, Ordering::SeqCst);
+                    break;
+                }
             }
+
+            debug!(message = "exiting inference thread");
             Ok::<_, anyhow::Error>(())
         });
 
         scope.spawn(move |_| {
-            while let Ok((poses, timing, frame_num, mut image_bytes)) = poses_rx.recv() {
+            while let Ok((poses, timing, mut image_bytes)) = poses_rx.recv() {
                 if !wait_q(wait_key_ms).context("failed waiting for 'q' key")? {
                     running.store(false, Ordering::SeqCst);
                 }
@@ -368,16 +390,18 @@ fn main() -> Result<()> {
                     threshold,
                     timing,
                     &mut mat,
-                    *frame_duration.lock().unwrap(),
-                    frame_num,
+                    *frame_duration.read().unwrap(),
+                    frame_num.fetch_add(1, Ordering::SeqCst),
                     pb_model_cam_fps.as_ref(),
                 )
                 .context("failed drawing poses")?;
             }
+
+            debug!(message = "exiting draw thread");
             Ok::<_, anyhow::Error>(())
         });
 
         Ok(())
     })
-    .unwrap()
+    .expect("thread panicked")
 }

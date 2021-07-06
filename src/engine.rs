@@ -9,10 +9,7 @@ use crate::{
 use cxx::UniquePtr;
 use std::{
     path::Path,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -21,7 +18,6 @@ pub(crate) struct Engine<D> {
     model_runner: PipelinedModelRunner,
     decoder: D,
     pub(crate) timing: Mutex<Timing>,
-    frame_num: AtomicUsize,
     start_inference: Mutex<Instant>,
 }
 
@@ -81,7 +77,6 @@ impl<D> Engine<D> {
             model_runner,
             decoder,
             timing: Default::default(),
-            frame_num: Default::default(),
             start_inference: Mutex::new(Instant::now()),
         })
     }
@@ -118,15 +113,10 @@ impl<D> Engine<D> {
             .decode_output(self.model_runner.output_interpreter()?)?;
         timing.decoding += start_decoding.elapsed();
 
-        self.frame_num.fetch_add(1, Ordering::SeqCst);
         Ok(poses)
     }
 
     pub(crate) fn timing(&self) -> Timing {
         *self.timing.lock().unwrap()
-    }
-
-    pub(crate) fn frame_num(&self) -> usize {
-        self.frame_num.load(Ordering::SeqCst)
     }
 }
