@@ -256,15 +256,13 @@ fn main() -> Result<()> {
     .to_mat()
     .map_err(Error::ConvertMatExprToMat)?;
 
-    let engine = Arc::new(
-        engine::Engine::new(
-            &opt.models,
-            crate::decode::hand_rolled::Decoder::default(),
-            opt.input_queue_size,
-            opt.output_queue_size,
-            opt.threads_per_interpreter,
-        )?,
-    );
+    let engine = Arc::new(engine::Engine::new(
+        &opt.models,
+        crate::decode::hand_rolled::Decoder::default(),
+        opt.input_queue_size,
+        opt.output_queue_size,
+        opt.threads_per_interpreter,
+    )?);
 
     let running = Arc::new(AtomicBool::new(true));
     let running_ctrl_c = running.clone();
