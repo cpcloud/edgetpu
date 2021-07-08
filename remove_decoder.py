@@ -1,12 +1,12 @@
-from typing import IO
-import ujson as json
-import subprocess
-import tempfile
 import itertools
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from typing import IO
 
 import click
+import ujson
 
 
 def tflite_to_json(data: IO[bytes], json_output_dir: Path, fbs_schema: Path) -> Path:
@@ -37,7 +37,7 @@ def json_to_tflite(json_model_path: str, output_dir: str, fbs_schema: str) -> No
 
 def delete_decoder_from_json(path: Path):
     with path.open("r") as f:
-        model = json.load(f)
+        model = ujson.load(f)
     model["operator_codes"] = [
         code
         for code in model["operator_codes"]
