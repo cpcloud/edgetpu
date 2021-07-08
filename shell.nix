@@ -20,7 +20,7 @@ pkgs.mkShell {
     abseil-cpp
     cargo-bloat
     cargo-edit
-    clang_10
+    clang_11
     flatbuffers
     glog
     libcoral
@@ -36,6 +36,6 @@ pkgs.mkShell {
   ++ lib.optionals pkgs.stdenv.isAarch64 [ pkgs.v4l-utils ];
 
   NIX_CFLAGS_COMPILE = lib.optionalString (buildType == "debug") "-ggdb -Og";
-  LIBCLANG_PATH = "${pkgs.clang_10.cc.lib}/lib";
-  CLANG_PATH = "${pkgs.clang_10}/bin/clang";
+  LIBCLANG_PATH = "${pkgs.clang_11.cc.lib}/lib";
+  CLANG_PATH = "${pkgs.clang_11}/bin/clang";
 }
