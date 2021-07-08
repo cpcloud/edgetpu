@@ -20,9 +20,9 @@ ndarray = "0.15.3"
 num-derive = "0.3.3"
 num-traits = "0.2.14"
 opencv = { version = "0.53.0", features = ["clang-runtime"] }
-ordered-float = "2.5.1"
-structopt = "0.3.21"
-thiserror = "1.0.25"
+ordered-float = "2.6.0"
+structopt = "0.3.22"
+thiserror = "1.0.26"
 tracing = "0.1.26"
 tracing-subscriber = "0.2.19"
 
