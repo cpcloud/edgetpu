@@ -13,8 +13,13 @@ let
       opencv4
     ]
   );
+  debugAdapter =
+    if buildType == "debug" then
+      pkgs.stdenvAdapters.keepDebugInfo
+    else
+      pkgs.lib.id;
 in
-pkgs.mkShell {
+(debugAdapter pkgs.stdenv).mkDerivation {
   name = "edgetpu";
   buildInputs = (with pkgs; [
     abseil-cpp
@@ -35,7 +40,6 @@ pkgs.mkShell {
   ]) ++ lib.optionals pkgs.stdenv.isx86_64 [ pkgs.edgetpu-compiler ]
   ++ lib.optionals pkgs.stdenv.isAarch64 [ pkgs.v4l-utils ];
 
-  NIX_CFLAGS_COMPILE = lib.optionalString (buildType == "debug") "-ggdb -Og";
-  LIBCLANG_PATH = "${pkgs.clang_11.cc.lib}/lib";
-  CLANG_PATH = "${pkgs.clang_11}/bin/clang";
+  LIBCLANG_PATH = "${pkgs.clang_12.cc.lib}/lib";
+  CLANG_PATH = "${pkgs.clang_12}/bin/clang";
 }
