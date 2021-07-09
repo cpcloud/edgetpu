@@ -24,7 +24,7 @@ in
     abseil-cpp
     cargo-bloat
     cargo-edit
-    clang_11
+    clang_12
     flatbuffers
     glog
     libcoral
