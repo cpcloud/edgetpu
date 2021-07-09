@@ -5,7 +5,6 @@ in
 import /home/cloud/src/nixpkgs {
   overlays = [
     (import ./opencv4.nix)
-    (import ./v4l-utils.nix)
     (import sources.fenix)
     (self: super: {
       inherit (self.fenix.latest)
