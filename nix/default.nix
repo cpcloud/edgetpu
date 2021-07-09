@@ -28,11 +28,11 @@ import /home/cloud/src/nixpkgs {
       ];
     })
     (self: super: {
-      glog = super.glog.overrideAttrs (old: {
-        cmakeFlags = old.cmakeFlags ++ [ "-DCMAKE_CXX_STANDARD=17" ];
+      glog = super.glog.overrideAttrs (attrs: {
+        cmakeFlags = (attrs.cmakeFlags or []) ++ [ "-DCMAKE_CXX_STANDARD=17" ];
       });
-      gflags = super.gflags.overrideAttrs (old: {
-        cmakeFlags = old.cmakeFlags ++ [ "-DCMAKE_CXX_STANDARD=17" ];
+      gflags = super.gflags.overrideAttrs (attrs: {
+        cmakeFlags = (attrs.cmakeFlags or []) ++ [ "-DCMAKE_CXX_STANDARD=17" ];
       });
     })
     (self: super: {
@@ -43,15 +43,21 @@ import /home/cloud/src/nixpkgs {
         inherit buildType;
         withTests = [ ];
         lto = buildType == "release";
-      }).overrideAttrs (_: {
+      }).overrideAttrs (attrs: {
         dontStrip = buildType == "debug";
+        NIX_CFLAGS_COMPILE = self.lib.optionalString
+          (buildType == "debug")
+          "${attrs.NIX_CFLAGS_COMPILE or ""} -ggdb -Og";
       });
 
       libedgetpu = (super.libedgetpu.override {
         inherit buildType;
         lto = buildType == "release";
-      }).overrideAttrs (_: {
+      }).overrideAttrs (attrs: {
         dontStrip = buildType == "debug";
+        NIX_CFLAGS_COMPILE = self.lib.optionalString
+          (buildType == "debug")
+          "${attrs.NIX_CFLAGS_COMPILE or ""} -ggdb -Og";
       });
     })
   ];
