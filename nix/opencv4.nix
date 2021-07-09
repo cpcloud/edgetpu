@@ -19,12 +19,11 @@ self: super:
       enableOvis = false;
       enableGPhoto2 = false;
       enableDC1394 = false;
-      enableJPEG = true;
+      enableJPEG = false;
       enablePNG = false;
       enableTIFF = false;
       enableDocs = false;
-      enablePython = true;
-      pythonPackages = self.python3Packages;
+      enablePython = false;
     }
   ).overrideAttrs (
     attrs:
@@ -35,7 +34,6 @@ self: super:
           "videoio"
           "video"
           "imgcodecs"
-          "python3"
         ] ++
         lib.optionals (!self.stdenv.isAarch64) [ "highgui" ]
       );
