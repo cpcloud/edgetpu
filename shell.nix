@@ -10,7 +10,6 @@ let
       black
       mypy
       ujson
-      opencv4
     ]
   );
   debugAdapter =
