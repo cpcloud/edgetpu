@@ -1,5 +1,3 @@
-use crate::tflite_sys;
-
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
     #[error("failed to get output tensor: got null pointer instead")]
@@ -59,9 +57,6 @@ pub(crate) enum Error {
     #[error("failed to construct NotNan from f32: {1}")]
     ConstructNotNan(#[source] ordered_float::FloatIsNan, f32),
 
-    #[error("tensor type is not valid for converting to slice: {0:?}")]
-    GetTensorSlice(tflite_sys::TfLiteType),
-
     #[cfg(feature = "gui")]
     #[error("failed to draw line")]
     DrawLine(#[source] opencv::Error),
@@ -100,9 +95,6 @@ pub(crate) enum Error {
     #[error("cannot construct PipelinedModelRunner from empty interpreters list")]
     ConstructPipelineModelRunnerFromInterpreters,
 
-    #[error("got empty interpreter pointers vec")]
-    GetInterpreterPointers,
-
     #[error("failed to get model path as &str: {0:?}")]
     GetModelPathAsStr(std::path::PathBuf),
 
@@ -112,8 +104,11 @@ pub(crate) enum Error {
     #[error("got null pointer for TfLiteTensor when computing number of dimensions")]
     GetTensorForNumDims,
 
-    #[error("failed to push input tensors")]
-    PushInputTensors(#[source] cxx::Exception),
+    #[error("failed to push input tensor")]
+    PushInputTensor(#[source] cxx::Exception),
+
+    #[error("failed to push empty input tensor")]
+    PushInputTensorEmpty(#[source] cxx::Exception),
 
     #[error("failed to pop output tensors")]
     PopOutputTensors(#[source] cxx::Exception),
@@ -129,9 +124,6 @@ pub(crate) enum Error {
 
     #[error("failed to make edge tpu context")]
     MakeEdgeTpuContext(#[source] cxx::Exception),
-
-    #[error("failed to construct input tensor")]
-    MakeInputTensor(#[source] cxx::Exception),
 
     #[error("failed to get output queue size")]
     GetQueueSizes(#[source] cxx::Exception),
@@ -177,6 +169,9 @@ pub(crate) enum Error {
 
     #[error("failed to convert MatExpr to Mat")]
     ConvertMatExprToMat(#[source] opencv::Error),
+
+    #[error("failed to dequantize tensor")]
+    Dequantize(#[source] cxx::Exception),
 }
 
 /// Check whether a pointer to const T is null.
