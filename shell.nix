@@ -24,7 +24,7 @@ in
     abseil-cpp
     cargo-bloat
     cargo-edit
-    clang_12
+    clang-tools
     flatbuffers
     glog
     libcoral
@@ -36,7 +36,8 @@ in
     pythonEnv
     rustToolchain
     tensorflow-lite
-  ]) ++ lib.optionals pkgs.stdenv.isx86_64 [ pkgs.edgetpu-compiler ]
+  ])
+  ++ lib.optionals pkgs.stdenv.isx86_64 [ pkgs.edgetpu-compiler ]
   ++ lib.optionals pkgs.stdenv.isAarch64 [ pkgs.v4l-utils ];
 
   LIBCLANG_PATH = "${pkgs.clang_12.cc.lib}/lib";
