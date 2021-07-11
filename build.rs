@@ -42,11 +42,13 @@ fn main() -> Result<()> {
     let mut build = build
         .includes(&include_paths)
         .file("src/ffi.cc")
-        .flag_if_supported("-std=c++17")
-        .flag_if_supported(if cfg!(debug_assertions) { "-Og" } else { "-O3" });
+        .flag_if_supported("-std=c++17");
 
     if cfg!(debug_assertions) {
+        build = build.flag_if_supported("-Og");
         build = build.flag_if_supported("-ggdb");
+    } else {
+        build = build.flag_if_supported("-O3");
     }
 
     build.compile("tflite_coral");
