@@ -183,24 +183,7 @@ OutputTensor::OutputTensor(std::unique_ptr<coral::PipelineTensor> tensor,
 }
 
 OutputTensor::~OutputTensor() {
-  if (runner_ == nullptr) {
-    rust_log_error("runner_ is nullptr");
-    return;
-  }
-
-  auto *output_tensor_allocator = runner_->GetOutputTensorAllocator();
-
-  if (output_tensor_allocator == nullptr) {
-    rust_log_error("output_tensor_allocator is nullptr");
-    return;
-  }
-
-  if (tensor_ == nullptr) {
-    rust_log_error("tensor_ is nullptr");
-    return;
-  }
-
-  output_tensor_allocator->Free(tensor_->buffer);
+  runner_->GetOutputTensorAllocator()->Free(tensor_.buffer);
 }
 
 } // namespace internal

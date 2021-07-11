@@ -19,10 +19,6 @@ pub(crate) mod ffi {
         path: String,
     }
 
-    extern "Rust" {
-        fn rust_log_error(msg: &CxxString);
-    }
-
     unsafe extern "C++" {
         include!("tensorflow/lite/interpreter.h");
         include!("tensorflow/lite/model.h");
@@ -114,8 +110,4 @@ pub(crate) mod ffi {
 
         fn init_glog(program_name: &str) -> Result<()>;
     }
-}
-
-fn rust_log_error(msg: &cxx::CxxString) {
-    tracing::error!(message = msg.to_string_lossy().as_ref());
 }
