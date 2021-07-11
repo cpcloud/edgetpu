@@ -85,6 +85,8 @@ pub(crate) mod ffi {
         fn get_input_queue_size(runner: &PipelinedModelRunner) -> Result<usize>;
         fn get_output_queue_size(runner: &PipelinedModelRunner) -> Result<usize>;
 
+        fn dequantize_with_scale(tensor: &TfLiteTensor, scale: f32) -> Result<Vec<f32>>;
+
         fn make_model(model_path: &str) -> Result<UniquePtr<FlatBufferModel>>;
 
         fn make_interpreter_from_model(
