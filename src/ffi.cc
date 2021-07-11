@@ -1,4 +1,5 @@
 #include "tflite-pose/include/ffi.h"
+#include "coral/pipeline/common.h"
 #include "coral/pipeline/pipelined_model_runner.h"
 #include "coral/tflite_utils.h"
 #include "glog/logging.h"
@@ -11,8 +12,6 @@
 #include <algorithm>
 #include <iterator>
 #include <memory>
-
-using google::ERROR;
 
 namespace {
 
@@ -37,6 +36,7 @@ DeviceType edgetpu_device_type_to_device_type(edgetpu::DeviceType device_type) {
     throw std::invalid_argument("invalid edgetpu::DeviceType");
   }
 }
+
 } // namespace
 
 rust::Vec<std::size_t>
@@ -45,7 +45,6 @@ get_queue_sizes(const coral::PipelinedModelRunner &runner) {
 
   rust::Vec<std::size_t> results;
   results.reserve(queue_sizes.size());
-
   std::copy(queue_sizes.cbegin(), queue_sizes.cend(),
             std::back_insert_iterator(results));
 
@@ -91,6 +90,7 @@ std::shared_ptr<coral::PipelinedModelRunner> make_pipelined_model_runner(
     rust::Slice<const std::shared_ptr<tflite::Interpreter>> interpreters) {
   std::vector<tflite::Interpreter *> interps;
   interps.reserve(interpreters.size());
+
   std::transform(interpreters.begin(), interpreters.end(),
                  std::back_insert_iterator(interps), [](auto interp) {
                    if (interp == nullptr) {
@@ -170,13 +170,9 @@ std::shared_ptr<tflite::Interpreter> make_interpreter_from_model(
 
 namespace internal {
 
-OutputTensor::OutputTensor(std::unique_ptr<coral::PipelineTensor> tensor,
+OutputTensor::OutputTensor(coral::PipelineTensor tensor,
                            std::shared_ptr<coral::PipelinedModelRunner> runner)
     : tensor_(std::move(tensor)), runner_(runner) {
-  if (tensor_ == nullptr) {
-    throw std::invalid_argument("tensor_ is nullptr");
-  }
-
   if (runner_ == nullptr) {
     throw std::invalid_argument("runner_ is nullptr");
   }
@@ -193,9 +189,8 @@ void init_glog(rust::Str program_name) {
   google::InitGoogleLogging(prog_name.c_str());
 }
 
-std::shared_ptr<coral::PipelineTensor>
-make_input_tensor(std::shared_ptr<coral::PipelinedModelRunner> runner,
-                  rust::Slice<const uint8_t> data) {
+bool push_input_tensor(std::shared_ptr<coral::PipelinedModelRunner> runner,
+                       rust::Slice<const uint8_t> data) {
   if (runner == nullptr) {
     throw std::logic_error("runner is nullptr");
   }
@@ -215,46 +210,40 @@ make_input_tensor(std::shared_ptr<coral::PipelinedModelRunner> runner,
   std::copy(data.begin(), data.end(),
             reinterpret_cast<uint8_t *>(buffer->ptr()));
 
-  return std::shared_ptr<coral::PipelineTensor>(
-      new coral::PipelineTensor{.type = TfLiteType::kTfLiteUInt8,
-                                .buffer = buffer,
-                                .bytes = data.size()});
+  coral::PipelineTensor tensor{
+      .type = TfLiteType::kTfLiteUInt8, .buffer = buffer, .bytes = data.size()};
+  std::vector<coral::PipelineTensor> inputs;
+  inputs.push_back(tensor);
+  return runner->Push(inputs);
 }
 
-bool push_input_tensors(
-    std::shared_ptr<coral::PipelinedModelRunner> runner,
-    rust::Slice<std::shared_ptr<coral::PipelineTensor>> inputs) {
+bool push_input_tensor_empty(
+    std::shared_ptr<coral::PipelinedModelRunner> runner) {
   if (runner == nullptr) {
     throw std::logic_error("runner is nullptr");
   }
-
-  std::vector<coral::PipelineTensor> cpp_inputs;
-  cpp_inputs.reserve(inputs.size());
-
-  std::transform(inputs.begin(), inputs.end(),
-                 std::back_insert_iterator(cpp_inputs),
-                 [](auto input) { return *input; });
-
-  return runner->Push(cpp_inputs);
+  return runner->Push({});
 }
 
-bool pop_output_tensors(
-    std::shared_ptr<coral::PipelinedModelRunner> runner,
-    rust::Slice<std::unique_ptr<internal::OutputTensor>> outputs) {
+std::unique_ptr<std::vector<internal::OutputTensor>>
+pop_output_tensors(std::shared_ptr<coral::PipelinedModelRunner> runner,
+                   bool &succeeded) {
   if (runner == nullptr) {
     throw std::logic_error("runner is nullptr");
   }
 
   std::vector<coral::PipelineTensor> raw_outputs;
-  auto result = runner->Pop(&raw_outputs);
+  auto success = runner->Pop(&raw_outputs);
 
-  std::transform(raw_outputs.cbegin(), raw_outputs.cend(), outputs.begin(),
-                 [runner](auto raw_output) {
-                   return std::make_unique<internal::OutputTensor>(
-                       std::make_unique<coral::PipelineTensor>(raw_output),
-                       runner);
-                 });
-  return result;
+  auto outputs = std::make_unique<std::vector<internal::OutputTensor>>();
+  outputs->reserve(raw_outputs.size());
+
+  for (auto raw_output : raw_outputs) {
+    outputs->emplace_back(raw_output, runner);
+  }
+
+  succeeded = success;
+  return outputs;
 }
 
 rust::Vec<DeviceInfo> get_all_device_infos() {

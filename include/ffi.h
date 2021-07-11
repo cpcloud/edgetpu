@@ -1,8 +1,9 @@
 #pragma once
 
+#include "coral/pipeline/common.h"
 #include "rust/cxx.h"
-
 #include <memory>
+#include <vector>
 
 struct TfLiteTensor;
 
@@ -30,12 +31,12 @@ namespace internal {
 
 class OutputTensor {
 public:
-  explicit OutputTensor(std::unique_ptr<coral::PipelineTensor> tensor,
+  explicit OutputTensor(coral::PipelineTensor tensor,
                         std::shared_ptr<coral::PipelinedModelRunner> runner);
   ~OutputTensor();
 
 private:
-  std::unique_ptr<coral::PipelineTensor> tensor_;
+  coral::PipelineTensor tensor_;
   std::shared_ptr<coral::PipelinedModelRunner> runner_;
 };
 
@@ -72,17 +73,14 @@ std::shared_ptr<tflite::Interpreter> make_interpreter_from_model(
     std::shared_ptr<edgetpu::EdgeTpuContext> edgetpu_context,
     std::size_t num_threads);
 
-std::shared_ptr<coral::PipelineTensor>
-make_input_tensor(std::shared_ptr<coral::PipelinedModelRunner> runner,
-                  rust::Slice<const uint8_t> data);
+bool push_input_tensor(std::shared_ptr<coral::PipelinedModelRunner> runner,
+                       rust::Slice<const uint8_t> data);
+bool push_input_tensor_empty(
+    std::shared_ptr<coral::PipelinedModelRunner> runner);
 
-bool push_input_tensors(
-    std::shared_ptr<coral::PipelinedModelRunner> runner,
-    rust::Slice<std::shared_ptr<coral::PipelineTensor>> inputs);
-
-bool pop_output_tensors(
-    std::shared_ptr<coral::PipelinedModelRunner> runner,
-    rust::Slice<std::unique_ptr<internal::OutputTensor>> outputs);
+std::unique_ptr<std::vector<internal::OutputTensor>>
+pop_output_tensors(std::shared_ptr<coral::PipelinedModelRunner> runner,
+                   bool &succeeded);
 
 rust::Vec<DeviceInfo> get_all_device_infos();
 

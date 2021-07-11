@@ -256,13 +256,13 @@ fn main() -> Result<()> {
     .to_mat()
     .map_err(Error::ConvertMatExprToMat)?;
 
-    let engine = Arc::new(engine::Engine::new(
+    let engine = engine::Engine::new(
         &opt.models,
         crate::decode::hand_rolled::Decoder::default(),
         opt.input_queue_size,
         opt.output_queue_size,
         opt.threads_per_interpreter,
-    )?);
+    )?;
 
     let running = Arc::new(AtomicBool::new(true));
     let running_ctrl_c = running.clone();
@@ -327,10 +327,9 @@ fn main() -> Result<()> {
                 .context("failed to resize frame")?;
 
                 let image_slice = mat_to_slice(&out_frame)?;
-                let inputs = Arc::new(vec![engine_push.alloc_input_tensor(image_slice)?]);
 
-                engine_push.push(Some(inputs.clone()))?;
-                input_frames_tx.send((inputs, image_slice.to_vec()))?;
+                engine_push.push(Some(image_slice))?;
+                input_frames_tx.send(image_slice.to_vec())?;
             }
 
             debug!(message = "exiting push thread");
@@ -340,7 +339,7 @@ fn main() -> Result<()> {
         let running_pop = running.clone();
         scope.spawn(move |_| {
             while running_pop.load(Ordering::SeqCst) {
-                let (_input_tensors, image_bytes) = input_frames_rx.recv()?;
+                let image_bytes = input_frames_rx.recv()?;
                 let _output_tensors = engine.pop().context("failed to pop")?;
                 let poses = engine.decode_poses().context("failed detecting poses")?;
                 if poses_tx

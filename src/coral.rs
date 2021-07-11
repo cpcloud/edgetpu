@@ -1,5 +1,5 @@
 use crate::{error::Error, ffi::ffi, tflite::Interpreter};
-use cxx::{SharedPtr, UniquePtr};
+use cxx::{CxxVector, SharedPtr, UniquePtr};
 use std::sync::Arc;
 use tracing::{debug, error, instrument};
 
@@ -10,7 +10,6 @@ pub(crate) struct PipelinedModelRunner {
     output_tensor_count: usize,
 }
 
-unsafe impl Sync for PipelinedModelRunner {}
 unsafe impl Send for PipelinedModelRunner {}
 
 impl PipelinedModelRunner {
@@ -19,19 +18,15 @@ impl PipelinedModelRunner {
             return Err(Error::ConstructPipelineModelRunnerFromInterpreters);
         }
 
-        let pointers = interpreters
-            .iter_mut()
-            .map(|interp| interp.as_inner())
-            .collect::<Vec<_>>();
-
-        if pointers.is_empty() {
-            return Err(Error::GetInterpreterPointers);
-        }
-
         let output_tensor_count = interpreters
             .last()
             .ok_or(Error::GetOutputInterpreter)?
             .get_output_tensor_count()?;
+
+        let pointers = interpreters
+            .iter_mut()
+            .map(|interp| interp.as_inner())
+            .collect::<Vec<_>>();
 
         Ok(Self {
             runner: ffi::make_pipelined_model_runner(&pointers)
@@ -70,26 +65,25 @@ impl PipelinedModelRunner {
 
     #[instrument(
         name = "PipelinedModelRunner::push",
-        skip(self, tensors),
+        skip(self, tensor),
         level = "debug"
     )]
-    pub(crate) fn push(&self, tensors: Option<Arc<Vec<PipelineTensor>>>) -> Result<bool, Error> {
-        let mut ptrs = tensors.map_or_else(Default::default, |tensors| {
-            tensors
-                .iter()
-                .map(PipelineTensor::as_inner)
-                .collect::<Vec<_>>()
-        });
-
-        ffi::push_input_tensors(self.runner.clone(), &mut ptrs).map_err(Error::PushInputTensors)
+    pub(crate) fn push(&self, tensor: Option<&[u8]>) -> Result<bool, Error> {
+        tensor.map_or_else(
+            || {
+                ffi::push_input_tensor_empty(self.runner.clone())
+                    .map_err(Error::PushInputTensorEmpty)
+            },
+            |tensor| {
+                ffi::push_input_tensor(self.runner.clone(), tensor).map_err(Error::PushInputTensor)
+            },
+        )
     }
 
     #[instrument(name = "PipelinedModelRunner::pop", skip(self), level = "debug")]
-    pub(crate) fn pop(&self) -> Result<Option<Vec<UniquePtr<ffi::OutputTensor>>>, Error> {
-        let mut tensors = std::iter::repeat_with(UniquePtr::null)
-            .take(self.output_tensor_count)
-            .collect::<Vec<_>>();
-        let succeeded = ffi::pop_output_tensors(self.runner.clone(), &mut tensors)
+    pub(crate) fn pop(&self) -> Result<Option<UniquePtr<CxxVector<ffi::OutputTensor>>>, Error> {
+        let mut succeeded = false;
+        let tensors = ffi::pop_output_tensors(self.runner.clone(), &mut succeeded)
             .map_err(Error::PopOutputTensors)?;
 
         Ok(if succeeded {
@@ -114,12 +108,6 @@ impl PipelinedModelRunner {
         Ok(())
     }
 
-    pub(crate) fn alloc_input_tensor(&self, data: &[u8]) -> Result<PipelineTensor, Error> {
-        Ok(PipelineTensor::new(
-            ffi::make_input_tensor(self.runner.clone(), data).map_err(Error::MakeInputTensor)?,
-        ))
-    }
-
     fn input_queue_size(&self) -> Result<usize, Error> {
         ffi::get_input_queue_size(&*self.runner).map_err(Error::GetInputQueueSize)
     }
@@ -137,20 +125,5 @@ impl Drop for PipelinedModelRunner {
         } else {
             debug!(message = "fully drained");
         }
-    }
-}
-
-pub(crate) struct PipelineTensor(SharedPtr<ffi::PipelineTensor>);
-
-unsafe impl Send for PipelineTensor {}
-unsafe impl Sync for PipelineTensor {}
-
-impl PipelineTensor {
-    fn new(tensor: SharedPtr<ffi::PipelineTensor>) -> Self {
-        Self(tensor)
-    }
-
-    fn as_inner(&self) -> SharedPtr<ffi::PipelineTensor> {
-        self.0.clone()
     }
 }

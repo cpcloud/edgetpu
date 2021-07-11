@@ -61,20 +61,17 @@ pub(crate) mod ffi {
             size: usize,
         ) -> Result<()>;
 
-        fn push_input_tensors(
+        fn push_input_tensor(
             runner: SharedPtr<PipelinedModelRunner>,
-            inputs: &mut [SharedPtr<PipelineTensor>],
+            inputs: &[u8],
         ) -> Result<bool>;
+
+        fn push_input_tensor_empty(runner: SharedPtr<PipelinedModelRunner>) -> Result<bool>;
 
         fn pop_output_tensors(
             runner: SharedPtr<PipelinedModelRunner>,
-            outputs: &mut [UniquePtr<OutputTensor>],
-        ) -> Result<bool>;
-
-        fn make_input_tensor(
-            runner: SharedPtr<PipelinedModelRunner>,
-            data: &[u8],
-        ) -> Result<SharedPtr<PipelineTensor>>;
+            succeeded: &mut bool,
+        ) -> Result<UniquePtr<CxxVector<OutputTensor>>>;
 
         fn get_queue_sizes(runner: &PipelinedModelRunner) -> Result<Vec<usize>>;
 

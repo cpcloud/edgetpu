@@ -1,24 +1,22 @@
 use crate::{
-    coral::{PipelineTensor, PipelinedModelRunner},
-    decode::Decoder,
-    edgetpu::Devices,
-    error::Error,
-    ffi::ffi,
-    pose, tflite,
+    coral::PipelinedModelRunner, decode::Decoder, edgetpu::Devices, error::Error, ffi::ffi, pose,
+    tflite,
 };
-use cxx::UniquePtr;
+use cxx::{CxxVector, UniquePtr};
 use std::{
     path::Path,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+use tracing::{debug, instrument};
 
 /// An engine for doing pose estimation with edge TPU devices
+#[derive(Clone)]
 pub(crate) struct Engine<D> {
-    model_runner: PipelinedModelRunner,
-    decoder: D,
-    pub(crate) timing: Mutex<Timing>,
-    start_inference: Mutex<Instant>,
+    model_runner: Arc<Mutex<PipelinedModelRunner>>,
+    decoder: Arc<D>,
+    pub(crate) timing: Arc<Mutex<Timing>>,
+    start_inference: Arc<Mutex<Instant>>,
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -52,10 +50,10 @@ impl<D> Engine<D> {
         let mut interpreters = model_paths
             .iter()
             .map(|model_path| {
+                let path = model_path.as_ref();
                 tflite::Interpreter::new(
-                    std::fs::canonicalize(&model_path).map_err(move |e| {
-                        Error::CanonicalizePath(e, model_path.as_ref().to_path_buf())
-                    })?,
+                    path.canonicalize()
+                        .map_err(move |e| Error::CanonicalizePath(e, path.to_path_buf()))?,
                     devices.clone(),
                     threads_per_interpreter,
                 )
@@ -74,32 +72,32 @@ impl<D> Engine<D> {
         )?;
 
         Ok(Self {
-            model_runner,
-            decoder,
+            model_runner: Arc::new(Mutex::new(model_runner)),
+            decoder: Arc::new(decoder),
             timing: Default::default(),
-            start_inference: Mutex::new(Instant::now()),
+            start_inference: Arc::new(Mutex::new(Instant::now())),
         })
     }
 
     pub(crate) fn get_input_dimensions(&self) -> Result<(usize, usize), Error> {
-        self.model_runner.get_input_dimensions()
+        self.model_runner.lock().unwrap().get_input_dimensions()
     }
 
-    pub(crate) fn push(&self, input_tensor: Option<Arc<Vec<PipelineTensor>>>) -> Result<(), Error> {
+    #[instrument(name = "Engine::push", skip(self, input_tensor), level = "debug")]
+    pub(crate) fn push(&self, input_tensor: Option<&[u8]>) -> Result<(), Error> {
         *self.start_inference.lock().unwrap() = Instant::now();
-        self.model_runner.push(input_tensor)?;
+        self.model_runner.lock().unwrap().push(input_tensor)?;
+        debug!(duration = ?self.start_inference.lock().unwrap().elapsed());
         Ok(())
     }
 
-    pub(crate) fn pop(&self) -> Result<Option<Vec<UniquePtr<ffi::OutputTensor>>>, Error> {
-        let result = self.model_runner.pop()?;
+    #[instrument(name = "Engine::pop", skip(self), level = "debug")]
+    pub(crate) fn pop(&self) -> Result<Option<UniquePtr<CxxVector<ffi::OutputTensor>>>, Error> {
+        let result = self.model_runner.lock().unwrap().pop()?;
         let mut timing = self.timing.lock().unwrap();
-        timing.inference += self.start_inference.lock().unwrap().elapsed();
+        let elapsed = self.start_inference.lock().unwrap().elapsed();
+        timing.inference += elapsed;
         Ok(result)
-    }
-
-    pub(crate) fn alloc_input_tensor(&self, input: &[u8]) -> Result<PipelineTensor, Error> {
-        self.model_runner.alloc_input_tensor(input)
     }
 
     pub(crate) fn decode_poses(&self) -> Result<Box<[pose::Pose]>, Error>
@@ -110,7 +108,7 @@ impl<D> Engine<D> {
         let start_decoding = Instant::now();
         let poses = self
             .decoder
-            .decode_output(self.model_runner.output_interpreter()?)?;
+            .decode_output(self.model_runner.lock().unwrap().output_interpreter()?)?;
         timing.decoding += start_decoding.elapsed();
 
         Ok(poses)
