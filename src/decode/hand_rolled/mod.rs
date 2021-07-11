@@ -543,14 +543,14 @@ impl crate::decode::Decoder for Decoder {
         let heatmap_tensor = interp.get_output_tensor_by_name("float_heatmaps")?;
         let frame_height = heatmap_tensor.dim(1)?;
         let frame_width = heatmap_tensor.dim(2)?;
-        let heatmaps = heatmap_tensor.dequantized_with_scale(1.0)?;
+        let heatmaps = heatmap_tensor.dequantize_with_scale(1.0)?;
         assert!(!heatmaps.is_empty());
         let shorts = interp
             .get_output_tensor_by_name("float_short_offsets")?
-            .dequantized_with_scale(recip_output_stride)?;
+            .dequantize_with_scale(recip_output_stride)?;
         let mids = interp
             .get_output_tensor_by_name("float_mid_offsets")?
-            .dequantized_with_scale(recip_output_stride)?;
+            .dequantize_with_scale(recip_output_stride)?;
 
         let (pose_scores, keypoint_scores, keypoints) = self.decode_all_poses::<NUM_KEYPOINTS>(
             &heatmaps,

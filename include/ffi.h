@@ -60,6 +60,8 @@ get_queue_sizes(const coral::PipelinedModelRunner &runner);
 std::size_t get_input_queue_size(const coral::PipelinedModelRunner &runner);
 std::size_t get_output_queue_size(const coral::PipelinedModelRunner &runner);
 
+rust::Vec<float> dequantize_with_scale(const TfLiteTensor &tensor, float scale);
+
 std::shared_ptr<edgetpu::EdgeTpuContext>
 make_edge_tpu_context(DeviceType device_type, rust::Str device_path);
 

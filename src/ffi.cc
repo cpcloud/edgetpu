@@ -60,6 +60,33 @@ std::size_t get_output_queue_size(const coral::PipelinedModelRunner &runner) {
   return runner.GetOutputQueueSize();
 }
 
+rust::Vec<float> dequantize_with_scale(const TfLiteTensor &tensor,
+                                       float extra_scale) {
+  if (tensor.type != kTfLiteUInt8) {
+    throw std::logic_error("invalid type for dequantize_with_scale");
+  }
+
+  const auto data_pointer = tensor.data.uint8;
+  if (data_pointer == nullptr) {
+    throw std::invalid_argument("tensor.data.uint8 is null");
+  }
+
+  const auto scale = tensor.params.scale * extra_scale;
+  const auto zero_point = static_cast<float>(tensor.params.zero_point);
+
+  const auto data = absl::MakeConstSpan(data_pointer, tensor.bytes);
+
+  rust::Vec<float> result;
+  result.reserve(data.size());
+
+  std::transform(data.cbegin(), data.cend(), std::back_insert_iterator(result),
+                 [scale, zero_point](const auto value) {
+                   return scale * (static_cast<float>(value) -
+                                   static_cast<float>(zero_point));
+                 });
+  return result;
+}
+
 std::shared_ptr<coral::PipelinedModelRunner> make_pipelined_model_runner(
     rust::Slice<const std::shared_ptr<tflite::Interpreter>> interpreters) {
   std::vector<tflite::Interpreter *> interps;
