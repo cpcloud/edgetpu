@@ -1,10 +1,9 @@
 use crate::{
     error::{check_null, Error},
+    ffi::ffi,
     tflite_sys,
 };
-use num_traits::ToPrimitive;
 use std::{convert::TryFrom, ffi::CStr, marker::PhantomData};
-use tracing::instrument;
 
 fn dim(tensor: *const tflite_sys::TfLiteTensor, index: usize) -> Result<usize, Error> {
     let dims = num_dims(check_null(tensor).ok_or(Error::GetTensorForDim)?)?;
@@ -29,7 +28,6 @@ fn num_dims(tensor: *const tflite_sys::TfLiteTensor) -> Result<usize, Error> {
 /// A safe wrapper around TfLiteTensor.
 pub(crate) struct Tensor<'interp> {
     tensor: *const tflite_sys::TfLiteTensor,
-    len: usize,
     // Data are owned by the interpreter that allocated the tensor.
     _p: PhantomData<&'interp ()>,
 }
@@ -39,7 +37,6 @@ impl<'interp> Tensor<'interp> {
         let tensor = check_null(tensor).ok_or(Error::CreateTensor)?;
         Ok(Self {
             tensor,
-            len: (0..num_dims(tensor)?).try_fold(1, |size, d| Ok(size * dim(tensor, d)?))?,
             _p: Default::default(),
         })
     }
@@ -50,36 +47,11 @@ impl<'interp> Tensor<'interp> {
             .map_err(Error::GetTensorName)
     }
 
-    fn r#type(&self) -> tflite_sys::TfLiteType {
-        unsafe { (*self.tensor).type_ }
-    }
-
-    fn quantization_params(&self) -> tflite_sys::TfLiteQuantizationParams {
-        unsafe { (*self.tensor).params }
-    }
-
-    /// Mutable view of a tensor's data as a slice of `T` values.
-    #[instrument(name = "Tensor::as_u8_slice", skip(self), level = "debug")]
-    fn as_u8_slice(&'interp self) -> Result<&'interp [u8], Error> {
-        let typ = self.r#type();
-        if typ != tflite_sys::TfLiteType::kTfLiteUInt8 {
-            return Err(Error::GetTensorSlice(typ));
+    pub(crate) fn dequantize_with_scale(&'interp self, scale: f32) -> Result<Vec<f32>, Error> {
+        unsafe {
+            ffi::dequantize_with_scale(self.tensor.as_ref().expect("self.tensor is null"), scale)
+                .map_err(Error::Dequantize)
         }
-        Ok(unsafe { std::slice::from_raw_parts((*self.tensor).data.uint8, self.len) })
-    }
-
-    pub(crate) fn dequantized_with_scale(&'interp self, mut scale: f32) -> Result<Vec<f32>, Error> {
-        let tflite_sys::TfLiteQuantizationParams {
-            zero_point,
-            scale: quant_scale,
-        } = self.quantization_params();
-        scale *= quant_scale;
-        let zero_point = zero_point.to_f32().ok_or(Error::ConvertToF32)?;
-        Ok(self
-            .as_u8_slice()?
-            .iter()
-            .map(|&value| (f32::from(value) - zero_point) * scale)
-            .collect::<Vec<_>>())
     }
 
     pub(crate) fn dim(&self, index: usize) -> Result<usize, Error> {
