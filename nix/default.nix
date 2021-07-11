@@ -53,6 +53,7 @@ import /home/cloud/src/nixpkgs {
       libedgetpu = (super.libedgetpu.override {
         inherit buildType;
         lto = buildType == "release";
+        withPci = false;
       }).overrideAttrs (attrs: {
         dontStrip = buildType == "debug";
         NIX_CFLAGS_COMPILE = self.lib.optionalString
